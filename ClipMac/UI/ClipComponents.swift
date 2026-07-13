@@ -10,21 +10,6 @@ enum ClipFont {
     static func italic(_ size: CGFloat) -> Font { .custom("EB Garamond", size: size).italic() }
 }
 
-struct PaperCard<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .padding(22)
-            .background(ClipDesign.surface)
-            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.cardRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: ClipDesign.cardRadius)
-                    .stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
-            }
-    }
-}
-
 struct SmallCapsLabel: View {
     let text: String
     var color: Color = ClipDesign.inkSecondary
@@ -222,4 +207,3 @@ extension View {
             }
     }
 }
-

@@ -52,7 +52,6 @@ struct AudioSource: Identifiable, Hashable {
         self.duration = duration
     }
 
-    var displayName: String { url.deletingPathExtension().lastPathComponent }
 }
 
 struct PairingSnapshot {
@@ -161,7 +160,6 @@ final class AlignmentJob: ObservableObject, Identifiable {
     let id = UUID()
     let source: PairingSnapshot
     let quality: AlignmentQuality
-    let createdAt = Date()
 
     @Published var stage: AlignmentStage = .waiting
     @Published var progress: Double = 0
@@ -221,4 +219,3 @@ enum MacAppError: LocalizedError {
         }
     }
 }
-

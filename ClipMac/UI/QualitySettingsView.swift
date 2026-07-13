@@ -23,7 +23,10 @@ struct QualitySettingsView: View {
                         HStack(alignment: .top, spacing: 12) {
                             ZStack {
                                 Circle()
-                                    .stroke(model.quality == quality ? ClipDesign.ink : ClipDesign.hairline, lineWidth: 1)
+                                    .stroke(
+                                        model.quality == quality ? ClipDesign.ink : ClipDesign.hairline,
+                                        lineWidth: ClipDesign.hairlineWidth
+                                    )
                                     .frame(width: 16, height: 16)
                                 if model.quality == quality {
                                     Circle().fill(ClipDesign.ink).frame(width: 8, height: 8)
@@ -66,7 +69,6 @@ struct QualitySettingsView: View {
         .padding(28)
         .frame(width: 490, height: 410)
         .background(ClipDesign.paper)
-        .tint(ClipDesign.terracotta)
+        .tint(ClipDesign.ink)
     }
 }
-

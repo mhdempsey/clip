@@ -198,9 +198,7 @@ public enum EPUBReader {
 }
 
 private struct PackageItem: Sendable {
-    var id: String
     var href: String
-    var mediaType: String
     var properties: String
 }
 
@@ -231,7 +229,7 @@ private final class PackageDelegate: NSObject, XMLParserDelegate {
         case "title", "creator": capturing = name; buffer = ""
         case "item":
             if let id = attributeDict["id"], let href = attributeDict["href"] {
-                manifest[id] = PackageItem(id: id, href: href, mediaType: attributeDict["media-type"] ?? "", properties: attributeDict["properties"] ?? "")
+                manifest[id] = PackageItem(href: href, properties: attributeDict["properties"] ?? "")
             }
         case "itemref": if let idref = attributeDict["idref"] { spine.append(idref) }
         case "meta": if attributeDict["name"]?.lowercased() == "cover" { coverID = attributeDict["content"] }

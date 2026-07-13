@@ -1,21 +1,17 @@
 import Foundation
 import WhisperKit
 
-struct TranscriptionUpdate {
-    enum Phase {
-        case cacheLookup
-        case modelDownload
-        case listening
-    }
-
-    let phase: Phase
-    let fraction: Double
-    let cacheHit: Bool
+enum TranscriptionUpdate: Sendable {
+    case cacheLookup
+    case modelDownload(fraction: Double)
+    case listening(fraction: Double, cacheHit: Bool)
 }
 
 actor WhisperTranscriber {
     private let cache = TranscriptCache.shared
     private let defaults = UserDefaults.standard
+    private var loadedKit: WhisperKit?
+    private var loadedModel: String?
 
     func transcribe(
         audio: [AudioSource],
@@ -23,21 +19,15 @@ actor WhisperTranscriber {
         update: @escaping @Sendable (TranscriptionUpdate) -> Void
     ) async throws -> [MacTranscriptWord] {
         let urls = audio.map(\.url)
-        update(.init(phase: .cacheLookup, fraction: 0, cacheHit: false))
+        update(.cacheLookup)
         let hash = try await cache.audioSetHash(urls)
         if let words = try await cache.load(hash: hash, model: quality.modelName) {
-            update(.init(phase: .listening, fraction: 1, cacheHit: true))
+            update(.listening(fraction: 1, cacheHit: true))
             return words
         }
 
         let modelPath = try await resolveModel(quality.modelName, update: update)
-        let kit = try await WhisperKit(
-            modelFolder: modelPath.path,
-            verbose: false,
-            prewarm: true,
-            load: true,
-            download: false
-        )
+        let kit = try await loadedKit(for: quality.modelName, at: modelPath)
         let options = DecodingOptions(wordTimestamps: true, chunkingStrategy: .vad)
 
         let totalDuration = max(1, audio.compactMap(\.duration).reduce(0, +))
@@ -53,7 +43,7 @@ actor WhisperTranscriber {
             ) { progress in
                 let heardSeconds = min(fileDuration, progress.timings.totalDecodingWindows * 30)
                 let fraction = min(0.995, (fileOffset + heardSeconds) / totalDuration)
-                update(.init(phase: .listening, fraction: fraction, cacheHit: false))
+                update(.listening(fraction: fraction, cacheHit: false))
                 return true
             }
 
@@ -70,12 +60,26 @@ actor WhisperTranscriber {
                 )
             })
             completedDuration += fileDuration
-            update(.init(phase: .listening, fraction: min(0.995, completedDuration / totalDuration), cacheHit: false))
+            update(.listening(fraction: min(0.995, completedDuration / totalDuration), cacheHit: false))
         }
 
         try await cache.save(words, hash: hash, model: quality.modelName)
-        update(.init(phase: .listening, fraction: 1, cacheHit: false))
+        update(.listening(fraction: 1, cacheHit: false))
         return words
+    }
+
+    private func loadedKit(for model: String, at modelPath: URL) async throws -> WhisperKit {
+        if loadedModel == model, let loadedKit { return loadedKit }
+        let kit = try await WhisperKit(
+            modelFolder: modelPath.path,
+            verbose: false,
+            prewarm: true,
+            load: true,
+            download: false
+        )
+        loadedModel = model
+        loadedKit = kit
+        return kit
     }
 
     private func resolveModel(
@@ -102,11 +106,10 @@ actor WhisperTranscriber {
             variant: model,
             downloadBase: modelRoot,
             progressCallback: { progress in
-                update(.init(phase: .modelDownload, fraction: progress.fractionCompleted, cacheHit: false))
+                update(.modelDownload(fraction: progress.fractionCompleted))
             }
         )
         defaults.set(path.path, forKey: key)
         return path
     }
 }
-

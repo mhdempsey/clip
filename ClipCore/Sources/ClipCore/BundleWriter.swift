@@ -31,8 +31,8 @@ public struct CoverageReport: Codable, Equatable, Sendable {
             let lower = cursor
             while cursor + 1 < sync.sentences.count, !sync.sentences[cursor + 1].isTimed { cursor += 1 }
             let upper = cursor
-            let previousEnd = sync.sentences[..<lower].reversed().compactMap(\.endS).first ?? 0
-            let nextStart = upper + 1 < sync.sentences.count ? sync.sentences[(upper + 1)...].compactMap(\.startS).first : nil
+            let previousEnd = lower > 0 ? sync.sentences[lower - 1].endS ?? 0 : 0
+            let nextStart = upper + 1 < sync.sentences.count ? sync.sentences[upper + 1].startS : nil
             let end = nextStart ?? sync.book.durationS
             let duration = max(0, end - previousEnd)
             if duration > 60 {
@@ -46,13 +46,20 @@ public struct CoverageReport: Codable, Equatable, Sendable {
             }
             cursor += 1
         }
+        var chapterFirst = [Double?](repeating: nil, count: sync.chapters.count)
+        var chapterLast = [Double?](repeating: nil, count: sync.chapters.count)
+        for sentence in sync.sentences where sync.chapters.indices.contains(sentence.chapter) {
+            if chapterFirst[sentence.chapter] == nil, let start = sentence.startS {
+                chapterFirst[sentence.chapter] = start
+            }
+            if let end = sentence.endS { chapterLast[sentence.chapter] = end }
+        }
         let chapterCoverage = sync.chapters.enumerated().map { chapter, info in
-            let chapterSentences = sync.sentences.filter { $0.chapter == chapter }
             return ChapterCoverage(
                 chapter: chapter,
                 title: info.title,
-                firstTimestamp: chapterSentences.compactMap(\.startS).first,
-                lastTimestamp: chapterSentences.compactMap(\.endS).last
+                firstTimestamp: chapterFirst[chapter],
+                lastTimestamp: chapterLast[chapter]
             )
         }
         return CoverageReport(sentenceCoverage: sentenceCoverage, untimedSpans: untimedSpans, chapters: chapterCoverage)

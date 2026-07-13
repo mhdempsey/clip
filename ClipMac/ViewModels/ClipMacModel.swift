@@ -11,7 +11,7 @@ final class ClipMacModel: ObservableObject {
     static let shared = ClipMacModel()
 
     @Published var section: MainSection = .align
-    @Published var draft = PairingDraft()
+    let draft = PairingDraft()
     @Published var jobs: [AlignmentJob] = []
     @Published var shelf: [ShelfBook] = []
     @Published var quality: AlignmentQuality {
@@ -110,7 +110,7 @@ final class ClipMacModel: ObservableObject {
     }
 
     func reveal(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        shelfService.reveal(url)
     }
 
     func refreshShelf() async {
@@ -246,4 +246,3 @@ final class ClipMacModel: ObservableObject {
         }
     }
 }
-

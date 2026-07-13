@@ -33,6 +33,8 @@ targets:
     platform: macOS
     sources:
       - path: ClipMac
+      - path: Resources/Fonts
+        buildPhase: resources
     dependencies:
       - package: ClipCore
       - package: WhisperKit
@@ -48,7 +50,6 @@ targets:
           iCloud.com.michael.clip:
             NSUbiquitousContainerIsDocumentScopePublic: true
             NSUbiquitousContainerName: Clip
-        ATSApplicationFontsPath: Fonts
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.mac
@@ -60,6 +61,8 @@ targets:
     platform: iOS
     sources:
       - path: Clip
+      - path: Resources/Fonts
+        buildPhase: resources
     dependencies:
       - package: ClipCore
       - package: GRDB
@@ -72,8 +75,23 @@ targets:
       properties:
         CFBundleDisplayName: Clip
         LSApplicationCategoryType: public.app-category.books
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.michael.clip.flush
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         NSSiriUsageDescription: Clip uses Siri to save highlights while you listen.

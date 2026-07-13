@@ -36,13 +36,13 @@ enum AlignmentPipeline {
             AudioSource(id: audio.id, url: audio.url, duration: duration)
         }
         let heardWords = try await transcriber.transcribe(audio: preparedAudio, quality: quality) { transcriptionUpdate in
-            switch transcriptionUpdate.phase {
+            switch transcriptionUpdate {
             case .cacheLookup:
                 update(.stage(.preparing, detail: "Looking for an earlier listening pass.", fraction: 0.07))
-            case .modelDownload:
-                update(.modelDownload(fraction: transcriptionUpdate.fraction))
-            case .listening:
-                update(.listening(fraction: transcriptionUpdate.fraction, cacheHit: transcriptionUpdate.cacheHit))
+            case let .modelDownload(fraction):
+                update(.modelDownload(fraction: fraction))
+            case let .listening(fraction, cacheHit):
+                update(.listening(fraction: fraction, cacheHit: cacheHit))
             }
         }
 
@@ -72,7 +72,7 @@ enum AlignmentPipeline {
             return SyncChapter(title: chapter.title, startS: start, epubHref: chapter.href)
         }
 
-        let date = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let date = Date().formatted(.iso8601.year().month().day())
         let sync = ClipBookSync(
             version: 1,
             book: SyncBook(
@@ -83,7 +83,7 @@ enum AlignmentPipeline {
                     engine: "whisperkit",
                     model: quality.modelName,
                     coverage: match.coverage,
-                    created: String(date)
+                    created: date
                 )
             ),
             audio: syncAudio,

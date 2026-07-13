@@ -34,7 +34,7 @@ struct RootView: View {
         }
         .background(ClipDesign.paper)
         .foregroundStyle(ClipDesign.ink)
-        .tint(ClipDesign.terracotta)
+        .tint(ClipDesign.ink)
         .frame(minWidth: 680, minHeight: 640)
     }
 
@@ -77,4 +77,3 @@ struct RootView: View {
     RootView(model: ClipMacModel())
         .frame(width: 760, height: 720)
 }
-

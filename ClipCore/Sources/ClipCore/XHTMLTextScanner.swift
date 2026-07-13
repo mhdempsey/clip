@@ -181,13 +181,18 @@ public enum XHTMLTextScanner {
         flushImplicit()
 
         var fullText = ""
+        var emittedCharacterCount = 0
         var publicBlocks: [XHTMLBlock] = []
         var headings: [XHTMLHeading] = []
         for block in blocks {
-            if !fullText.isEmpty { fullText += "\n\n" }
-            let lower = fullText.count
+            if !fullText.isEmpty {
+                fullText += "\n\n"
+                emittedCharacterCount += 2
+            }
+            let lower = emittedCharacterCount
             fullText += block.text
-            let range = lower..<fullText.count
+            emittedCharacterCount += block.text.count
+            let range = lower..<emittedCharacterCount
             let publicBlock = XHTMLBlock(
                 text: block.text,
                 textRange: range,

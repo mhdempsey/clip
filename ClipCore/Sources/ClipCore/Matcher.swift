@@ -14,7 +14,6 @@ public enum Matcher {
     private struct BookToken {
         var value: String
         var sentenceOffset: Int
-        var wordOffset: Int
     }
 
     private struct TranscriptToken {
@@ -50,9 +49,9 @@ public enum Matcher {
         var bookTokens: [BookToken] = []
         var sentenceTokenCounts = Array(repeating: 0, count: sentences.count)
         for (sentenceOffset, sentence) in sentences.enumerated() {
-            for (wordOffset, word) in rawWords(sentence.text).enumerated() {
+            for word in rawWords(sentence.text) {
                 for normalized in normalize(word) {
-                    bookTokens.append(BookToken(value: normalized, sentenceOffset: sentenceOffset, wordOffset: wordOffset))
+                    bookTokens.append(BookToken(value: normalized, sentenceOffset: sentenceOffset))
                     sentenceTokenCounts[sentenceOffset] += 1
                 }
             }
@@ -296,6 +295,9 @@ public enum Matcher {
         let left = Array(lhs)
         let right = Array(rhs)
         let maximum = max(left.count, right.count)
+        // With a 0.85 threshold, no non-identical token shorter than seven
+        // characters can survive even one edit.
+        guard maximum >= 7 else { return false }
         if abs(left.count - right.count) > Int(Double(maximum) * 0.15) { return false }
         var previous = Array(0...right.count)
         var current = [Int](repeating: 0, count: right.count + 1)

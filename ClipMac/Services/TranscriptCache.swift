@@ -38,8 +38,13 @@ actor TranscriptCache {
 
     func load(hash: String, model: String) throws -> [MacTranscriptWord]? {
         let url = try cacheURL(hash: hash, model: model)
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        let cached = try JSONDecoder().decode(CachedTranscript.self, from: Data(contentsOf: url))
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
+        let cached = try JSONDecoder().decode(CachedTranscript.self, from: data)
         guard cached.version == 1, cached.model == model else { return nil }
         return cached.words
     }

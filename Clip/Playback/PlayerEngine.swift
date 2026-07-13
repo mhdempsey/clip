@@ -1,4 +1,5 @@
 import AVFoundation
+import ClipCore
 import Combine
 import Foundation
 
@@ -25,6 +26,7 @@ final class PlayerEngine: ObservableObject {
     private var interruptionObserver: NSObjectProtocol?
     private var finishObserver: NSObjectProtocol?
     private var clipWindowObserver: NSObjectProtocol?
+    private var externalPlaybackObserver: DarwinNotificationObservation?
     private var lastPersistedAt = Date.distantPast
 
     init(database: ClipDatabase = .shared) {
@@ -153,6 +155,11 @@ final class PlayerEngine: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.publishState(forceActivityUpdate: true) }
+        }
+        externalPlaybackObserver = DarwinNotificationObservation(
+            name: ClipShared.DarwinNotification.playbackCommand
+        ) { [weak self] in
+            Task { @MainActor in self?.processExternalPlaybackCommand() }
         }
     }
 

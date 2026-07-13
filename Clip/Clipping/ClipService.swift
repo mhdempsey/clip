@@ -1,4 +1,5 @@
 import Foundation
+import ClipCore
 import UIKit
 
 struct ClipResult: Sendable {
@@ -16,6 +17,7 @@ final class ClipService: ObservableObject {
     private let syncStore: SyncStore
     private let transport: ReadwiseTransport
     private var toastTask: Task<Void, Never>?
+    private var externalClipObserver: DarwinNotificationObservation?
 
     init(
         database: ClipDatabase = .shared,
@@ -26,6 +28,28 @@ final class ClipService: ObservableObject {
         self.syncStore = syncStore
         self.transport = transport
         refreshPendingCount()
+        externalClipObserver = DarwinNotificationObservation(
+            name: ClipShared.DarwinNotification.clipCommand
+        ) { [weak self] in
+            Task { @MainActor in self?.processExternalClipCommands() }
+        }
+        processExternalClipCommands()
+    }
+
+    func processExternalClipCommands() {
+        let defaults = AppGroup.defaults
+        let sequence = defaults.integer(forKey: AppGroup.Key.clipCommandSequence)
+        let handled = defaults.integer(forKey: AppGroup.Key.handledClipCommandSequence)
+        guard sequence > handled else { return }
+
+        defaults.set(sequence, forKey: AppGroup.Key.handledClipCommandSequence)
+        let count = min(sequence - handled, 20)
+        Task { [weak self] in
+            guard let self else { return }
+            for _ in 0..<count {
+                _ = try? await clipNow()
+            }
+        }
     }
 
     func clipNow() async throws -> ClipResult? {

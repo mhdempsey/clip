@@ -1,4 +1,5 @@
 import ClipCore
+import CoreFoundation
 import Foundation
 
 enum AppGroup {
@@ -12,6 +13,8 @@ enum AppGroup {
         static let interruptionPosition = ClipShared.DefaultsKey.interruptionPosition
         static let interruptionDate = ClipShared.DefaultsKey.interruptionDate
         static let playbackCommand = ClipShared.DefaultsKey.playbackCommand
+        static let clipCommandSequence = ClipShared.DefaultsKey.clipCommandSequence
+        static let handledClipCommandSequence = ClipShared.DefaultsKey.handledClipCommandSequence
         static let isPlaying = ClipShared.DefaultsKey.isPlaying
         static let importDates = ClipShared.DefaultsKey.importDates
     }
@@ -35,6 +38,39 @@ enum AppGroup {
         set {
             defaults.set(ClipShared.validatedClipWindow(newValue), forKey: Key.clipWindow)
         }
+    }
+}
+
+final class DarwinNotificationObservation: @unchecked Sendable {
+    private let name: CFNotificationName
+    private let handler: @Sendable () -> Void
+
+    init(name: String, handler: @escaping @Sendable () -> Void) {
+        self.name = CFNotificationName(rawValue: name as CFString)
+        self.handler = handler
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let observation = Unmanaged<DarwinNotificationObservation>
+                    .fromOpaque(observer)
+                    .takeUnretainedValue()
+                observation.handler()
+            },
+            self.name.rawValue,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    deinit {
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            name,
+            nil
+        )
     }
 }
 

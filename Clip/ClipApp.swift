@@ -63,6 +63,7 @@ struct ClipApp: App {
                 case .active:
                     model.importer.refresh()
                     model.reloadBooks()
+                    clipService.processExternalClipCommands()
                     Task { await clipService.flushPending() }
                 case .background:
                     player.sceneDidEnterBackground()

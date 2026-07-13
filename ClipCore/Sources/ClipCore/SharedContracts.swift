@@ -14,7 +14,14 @@ public enum ClipShared {
         public static let interruptionDate = "lastInterruptionWallTime"
         public static let isPlaying = "isPlaying"
         public static let playbackCommand = "playbackCommand"
+        public static let clipCommandSequence = "clipCommandSequence"
+        public static let handledClipCommandSequence = "handledClipCommandSequence"
         public static let importDates = "clipbookImportDates"
+    }
+
+    public enum DarwinNotification {
+        public static let playbackCommand = "com.michael.clip.playback-command"
+        public static let clipCommand = "com.michael.clip.clip-command"
     }
 
     public static func validatedClipWindow(_ value: Int) -> Int {

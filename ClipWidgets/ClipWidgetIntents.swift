@@ -1,4 +1,5 @@
 import AppIntents
+import ClipCore
 
 struct ClipIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Clip"
@@ -7,10 +8,15 @@ struct ClipIntent: LiveActivityIntent {
     static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard try WidgetClipStore().enqueueCurrentClip() else {
+        let defaults = WidgetAppGroup.defaults
+        guard defaults.string(forKey: WidgetAppGroup.Key.currentBookID) != nil else {
             return .result(dialog: "Nothing is playing.")
         }
-        return .result(dialog: "Clipped. I’ll sync it later.")
+        let sequence = defaults.integer(forKey: WidgetAppGroup.Key.clipCommandSequence) + 1
+        defaults.set(sequence, forKey: WidgetAppGroup.Key.clipCommandSequence)
+        defaults.synchronize()
+        ClipDarwinNotifications.post(ClipShared.DarwinNotification.clipCommand)
+        return .result(dialog: "Clipped.")
     }
 }
 
@@ -23,6 +29,8 @@ struct PlayPauseIntent: LiveActivityIntent {
         let defaults = WidgetAppGroup.defaults
         let playing = defaults.bool(forKey: WidgetAppGroup.Key.isPlaying)
         defaults.set(playing ? "pause" : "play", forKey: WidgetAppGroup.Key.playbackCommand)
+        defaults.synchronize()
+        ClipDarwinNotifications.post(ClipShared.DarwinNotification.playbackCommand)
         return .result()
     }
 }

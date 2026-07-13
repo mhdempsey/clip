@@ -1,0 +1,134 @@
+name: Clip
+
+options:
+  bundleIdPrefix: com.michael
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0
+    CODE_SIGN_STYLE: Automatic
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
+
+packages:
+  ClipCore:
+    path: ClipCore
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: 6.27.0
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    from: 0.9.0
+
+targets:
+  ClipMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: ClipMac
+    dependencies:
+      - package: ClipCore
+      - package: WhisperKit
+    entitlements:
+      path: Config/ClipMac.entitlements
+    info:
+      path: Config/ClipMac-Info.plist
+      properties:
+        CFBundleDisplayName: Clip for Mac
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "Copyright © 2026 Michael Dempsey"
+        NSUbiquitousContainers:
+          iCloud.com.michael.clip:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: Clip
+        ATSApplicationFontsPath: Fonts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.mac
+        PRODUCT_NAME: Clip
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  Clip:
+    type: application
+    platform: iOS
+    sources:
+      - path: Clip
+    dependencies:
+      - package: ClipCore
+      - package: GRDB
+      - target: ClipWidgets
+        embed: true
+    entitlements:
+      path: Config/Clip.entitlements
+    info:
+      path: Config/Clip-Info.plist
+      properties:
+        CFBundleDisplayName: Clip
+        LSApplicationCategoryType: public.app-category.books
+        UIBackgroundModes:
+          - audio
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSSiriUsageDescription: Clip uses Siri to save highlights while you listen.
+        UIAppFonts:
+          - EBGaramond-Regular.ttf
+          - EBGaramond-Medium.ttf
+          - EBGaramond-SemiBold.ttf
+          - EBGaramond-Italic.ttf
+        INAlternativeAppNames:
+          - INAlternativeAppName: Bookmark
+          - INAlternativeAppName: Highlight
+          - INAlternativeAppName: Underline
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip
+        PRODUCT_NAME: Clip
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  ClipWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ClipWidgets
+    dependencies:
+      - package: ClipCore
+      - package: GRDB
+    entitlements:
+      path: Config/ClipWidgets.entitlements
+    info:
+      path: Config/ClipWidgets-Info.plist
+      properties:
+        CFBundleDisplayName: Clip Activity
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.widgets
+        PRODUCT_NAME: ClipWidgets
+        SKIP_INSTALL: YES
+
+schemes:
+  ClipMac:
+    build:
+      targets:
+        ClipMac: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Clip:
+    build:
+      targets:
+        Clip: all
+        ClipWidgets: all
+    run:
+      config: Debug
+    archive:
+      config: Release

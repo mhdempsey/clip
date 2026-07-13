@@ -10,6 +10,8 @@ struct LibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                ClipScreenTitle("Library")
+                    .padding(.top, 12)
                 if !importer.iCloudAvailable {
                     statusLine("iCloud Drive is off. Sign in to iCloud to see books aligned on your Mac.")
                 }
@@ -40,7 +42,7 @@ struct LibraryView: View {
             .padding(.bottom, 36)
         }
         .background(ClipDesign.paper.ignoresSafeArea())
-        .navigationTitle("Library")
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             importer.refresh()
             model.reloadBooks()

@@ -34,6 +34,36 @@ final class XHTMLTextScannerTests: XCTestCase {
         XCTAssertEqual(block.text, "Café society.")
     }
 
+    func testCharacterMapsSpanInlineTagsEntitiesUnicodeAndWhitespace() throws {
+        let xhtml = "<p>  Café <em>&amp; 🐋</em>\n\t  sails&#33;  </p>"
+        let block = try XCTUnwrap(XHTMLTextScanner.scan(xhtml).blocks.first)
+
+        XCTAssertEqual(block.text, "Café & 🐋 sails!")
+        XCTAssertEqual(block.sourceCharacterStarts.count, block.text.count)
+        XCTAssertEqual(block.sourceCharacterEnds.count, block.text.count)
+
+        let ampersand = try XCTUnwrap(block.text.firstIndex(of: "&"))
+        let ampersandOffset = block.text.distance(from: block.text.startIndex, to: ampersand)
+        XCTAssertEqual(substring(xhtml, block.sourceCharacterStarts[ampersandOffset]..<block.sourceCharacterEnds[ampersandOffset]), "&amp;")
+
+        let whale = try XCTUnwrap(block.text.firstIndex(of: "🐋"))
+        let whaleOffset = block.text.distance(from: block.text.startIndex, to: whale)
+        XCTAssertEqual(substring(xhtml, block.sourceCharacterStarts[whaleOffset]..<block.sourceCharacterEnds[whaleOffset]), "🐋")
+
+        for offset in block.text.indices {
+            let characterOffset = block.text.distance(from: block.text.startIndex, to: offset)
+            let raw = substring(xhtml, block.sourceCharacterStarts[characterOffset]..<block.sourceCharacterEnds[characterOffset])
+            if block.text[offset].isWhitespace {
+                XCTAssertTrue(raw.allSatisfy(\.isWhitespace))
+            } else {
+                XCTAssertEqual(XHTMLTextScanner.scan("<p>\(raw)</p>").text, String(block.text[offset]))
+            }
+        }
+
+        let mappedRange = block.sourceCharacterStarts[0]..<block.sourceCharacterEnds[block.sourceCharacterEnds.count - 1]
+        XCTAssertEqual(stripTags(substring(xhtml, mappedRange)), block.text)
+    }
+
     func testDivOnlyCreatesBlockWhenItDirectlyContainsText() {
         let nested = XHTMLTextScanner.scan("<div><p>First.</p><p>Second.</p></div>")
         XCTAssertEqual(nested.blocks.map(\.text), ["First.", "Second."])

@@ -1,4 +1,5 @@
 import AppKit
+import ClipCore
 import Foundation
 
 enum MainSection {
@@ -47,6 +48,10 @@ final class ClipMacModel: ObservableObject {
     }
 
     func addFiles(_ urls: [URL]) {
+        addFiles(urls, preserveAudioOrder: false)
+    }
+
+    private func addFiles(_ urls: [URL], preserveAudioOrder: Bool) {
         let supported = urls.filter { $0.isSupportedEPUB || $0.isSupportedAudio }
         guard !supported.isEmpty else {
             draft.inlineMessage = MacAppError.unsupportedFiles.localizedDescription
@@ -73,7 +78,8 @@ final class ClipMacModel: ObservableObject {
             .map { AudioSource(url: $0) }
         if !newAudio.isEmpty {
             draft.audio.append(contentsOf: newAudio)
-            if !userReorderedAudio { draft.audio = draft.audio.naturallySorted() }
+            if !userReorderedAudio, !preserveAudioOrder { draft.audio = draft.audio.naturallySorted() }
+            if preserveAudioOrder { userReorderedAudio = true }
             loadAudioMetadata(for: newAudio)
         }
     }
@@ -134,20 +140,36 @@ final class ClipMacModel: ObservableObject {
     }
 
     func realign(_ book: ShelfBook) {
-        let epub = book.bundleURL.appendingPathComponent("source.epub")
-        let audioDirectory = book.bundleURL.appendingPathComponent("audio", isDirectory: true)
-        let urls = (try? FileManager.default.contentsOfDirectory(
-            at: audioDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ))?.filter(\.isSupportedAudio) ?? []
-        section = .align
-        draft.reset()
-        addFiles([epub] + urls)
-        draft.title = book.title
-        draft.author = book.author
-        draft.metadataWasEdited = true
-        if let coverURL = book.coverURL { draft.coverData = try? Data(contentsOf: coverURL) }
+        Task {
+            let bundleURL = book.bundleURL
+            let orderedAudio = await Task.detached(priority: .userInitiated) {
+                let syncURL = bundleURL.appendingPathComponent("sync.json")
+                guard let data = try? Data(contentsOf: syncURL, options: .mappedIfSafe),
+                      let sync = try? JSONDecoder.clipSync.decode(ClipBookSync.self, from: data)
+                else { return [URL]() }
+                return sync.audio
+                    .map { bundleURL.appendingPathComponent($0.file) }
+                    .filter { FileManager.default.fileExists(atPath: $0.path) }
+            }.value
+            let audioDirectory = bundleURL.appendingPathComponent("audio", isDirectory: true)
+            let fallbackAudio = (try? FileManager.default.contentsOfDirectory(
+                at: audioDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ))?.filter(\.isSupportedAudio) ?? []
+            let audio = orderedAudio.isEmpty ? fallbackAudio : orderedAudio
+
+            section = .align
+            draft.reset()
+            addFiles(
+                [bundleURL.appendingPathComponent("source.epub")] + audio,
+                preserveAudioOrder: !orderedAudio.isEmpty
+            )
+            draft.title = book.title
+            draft.author = book.author
+            draft.metadataWasEdited = true
+            if let coverURL = book.coverURL { draft.coverData = try? Data(contentsOf: coverURL) }
+        }
     }
 
     private func loadEPUBMetadata(_ url: URL) {
@@ -155,11 +177,11 @@ final class ClipMacModel: ObservableObject {
         Task {
             defer { draft.isReadingMetadata = false }
             do {
-                let preview = try await Task.detached { try EPUBPreviewService.read(url) }.value
+                let preview = try await Task.detached { try EPUBReader.read(from: url) }.value
                 guard draft.epubURL == url else { return }
                 if !draft.metadataWasEdited {
-                    if let title = preview.title, !title.isEmpty { draft.title = title }
-                    if let author = preview.author, !author.isEmpty { draft.author = author }
+                    if !preview.metadata.title.isEmpty { draft.title = preview.metadata.title }
+                    if !preview.metadata.author.isEmpty { draft.author = preview.metadata.author }
                 }
                 if let cover = preview.coverData { draft.coverData = cover }
             } catch {
@@ -207,7 +229,8 @@ final class ClipMacModel: ObservableObject {
 
         do {
             let totalDuration = job.source.audio.compactMap(\.duration).reduce(0, +)
-            job.estimatedRemaining = totalDuration * job.quality.estimatedRealtimeFactor
+            job.estimatedTotal = totalDuration * job.quality.estimatedRealtimeFactor
+            job.estimatedRemaining = job.estimatedTotal
             let result = try await AlignmentPipeline.run(
                 source: job.source,
                 quality: job.quality,
@@ -228,7 +251,7 @@ final class ClipMacModel: ObservableObject {
                         job.stage = .listening
                         job.progress = fraction
                         job.detail = cacheHit ? "Using the private listening pass already on this Mac." : "Listening privately on this Mac."
-                        if let estimate = job.estimatedRemaining {
+                        if let estimate = job.estimatedTotal {
                             job.estimatedRemaining = max(0, estimate * (1 - fraction))
                         }
                     }

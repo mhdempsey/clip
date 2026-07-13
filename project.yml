@@ -40,6 +40,16 @@ targets:
       - package: WhisperKit
     entitlements:
       path: Config/ClipMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+        com.apple.security.network.client: true
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.michael.clip
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.com.michael.clip
+        com.apple.developer.icloud-services:
+          - CloudDocuments
     info:
       path: Config/ClipMac-Info.plist
       properties:
@@ -70,6 +80,16 @@ targets:
         embed: true
     entitlements:
       path: Config/Clip.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.michael.clip
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.michael.clip
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.com.michael.clip
+        com.apple.developer.icloud-services:
+          - CloudDocuments
+        com.apple.developer.siri: true
     info:
       path: Config/Clip-Info.plist
       properties:
@@ -120,6 +140,9 @@ targets:
       - package: GRDB
     entitlements:
       path: Config/ClipWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.michael.clip
     info:
       path: Config/ClipWidgets-Info.plist
       properties:

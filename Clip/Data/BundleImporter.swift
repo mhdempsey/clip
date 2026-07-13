@@ -19,6 +19,7 @@ final class BundleImporter: NSObject, ObservableObject {
     private let database: ClipDatabase
     private var observers: [NSObjectProtocol] = []
     private var inFlightPaths: Set<String> = []
+    private var pendingImportPaths: Set<String> = []
 
     init(database: ClipDatabase = .shared) {
         self.database = database
@@ -72,14 +73,21 @@ final class BundleImporter: NSObject, ObservableObject {
             let status = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
             let percent = item.value(forAttribute: NSMetadataUbiquitousItemPercentDownloadedKey) as? Double ?? 0
             if status != NSMetadataUbiquitousItemDownloadingStatusCurrent {
-                try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+                do {
+                    try FileManager.default.startDownloadingUbiquitousItem(at: url)
+                } catch {
+                    lastError = "Couldn’t start downloading \(url.deletingPathExtension().lastPathComponent): \(error.localizedDescription)"
+                }
                 currentDownloads.append(.init(
                     id: url.path,
                     title: url.deletingPathExtension().lastPathComponent,
                     progress: min(max(percent / 100, 0), 1)
                 ))
             } else {
-                guard inFlightPaths.insert(url.path).inserted else { continue }
+                guard inFlightPaths.insert(url.path).inserted else {
+                    pendingImportPaths.insert(url.path)
+                    continue
+                }
                 Task { await importBundle(at: url) }
             }
         }
@@ -87,7 +95,13 @@ final class BundleImporter: NSObject, ObservableObject {
     }
 
     private func importBundle(at url: URL) async {
-        defer { inFlightPaths.remove(url.path) }
+        defer {
+            inFlightPaths.remove(url.path)
+            if pendingImportPaths.remove(url.path) != nil,
+               inFlightPaths.insert(url.path).inserted {
+                Task { await importBundle(at: url) }
+            }
+        }
         let syncURL = url.appendingPathComponent("sync.json")
         do {
             let values = try syncURL.resourceValues(forKeys: [.contentModificationDateKey])

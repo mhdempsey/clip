@@ -52,7 +52,7 @@ final class MatcherTests: XCTestCase {
         XCTAssertTrue(middle.isTimed)
         XCTAssertNotNil(middle.words)
         XCTAssertFalse(middle.words?.isEmpty ?? true)
-        XCTAssertLessThanOrEqual(middle.conf, 0.5)
+        XCTAssertEqual(middle.conf, min(result.sentences[0].conf, result.sentences[2].conf) * 0.5, accuracy: 0.0001)
         assertValidTimings(result.sentences)
     }
 

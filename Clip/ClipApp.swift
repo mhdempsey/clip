@@ -21,16 +21,18 @@ struct ClipApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TabView(selection: $model.selectedTab) {
-                NavigationStack { LibraryView() }
-                    .tabItem { Label("Library", systemImage: "books.vertical") }
-                    .tag(AppModel.Tab.library)
-                NavigationStack { PlayerView() }
-                    .tabItem { Label("Listen", systemImage: "headphones") }
-                    .tag(AppModel.Tab.player)
-                NavigationStack { SettingsView() }
-                    .tabItem { Label("Settings", systemImage: "gearshape") }
-                    .tag(AppModel.Tab.settings)
+            Group {
+                switch model.selectedTab {
+                case .library:
+                    NavigationStack { LibraryView() }
+                case .player:
+                    NavigationStack { PlayerView() }
+                case .settings:
+                    NavigationStack { SettingsView() }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ClipTabBar(selection: $model.selectedTab)
             }
             .environmentObject(model)
             .environmentObject(model.importer)
@@ -70,5 +72,49 @@ struct ClipApp: App {
                 }
             }
         }
+    }
+}
+
+private struct ClipTabBar: View {
+    @Binding var selection: AppModel.Tab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            tab(.library, title: "Library", symbol: "books.vertical")
+            tab(.player, title: "Listen", symbol: "headphones")
+            tab(.settings, title: "Settings", symbol: "gearshape")
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(ClipDesign.surface.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(ClipDesign.hairline)
+                .frame(height: ClipDesign.hairlineWidth)
+        }
+    }
+
+    private func tab(_ tab: AppModel.Tab, title: String, symbol: String) -> some View {
+        let selected = selection == tab
+        return Button {
+            selection = tab
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: selected ? .semibold : .regular))
+                Text(title)
+                    .font(ClipDesign.semiboldFont(size: 13, relativeTo: .caption))
+            }
+            .foregroundStyle(selected ? ClipDesign.ink : ClipDesign.inkSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(selected ? ClipDesign.ink.opacity(0.06) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("tab.\(title.lowercased())")
     }
 }

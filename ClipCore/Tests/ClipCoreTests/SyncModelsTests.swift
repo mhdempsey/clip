@@ -21,6 +21,25 @@ final class SyncModelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder.clipSync.decode(ClipBookSync.self, from: data), sync)
     }
 
+    func testUntimedSentenceEncodesExplicitNullFields() throws {
+        var sentence = fixture().sentences[0]
+        sentence.startS = nil
+        sentence.endS = nil
+        sentence.words = nil
+        sentence.conf = 0
+
+        let data = try JSONEncoder.clipSync.encode(sentence)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertTrue(object.keys.contains("start_s"))
+        XCTAssertTrue(object.keys.contains("end_s"))
+        XCTAssertTrue(object.keys.contains("words"))
+        XCTAssertTrue(object["start_s"] is NSNull)
+        XCTAssertTrue(object["end_s"] is NSNull)
+        XCTAssertTrue(object["words"] is NSNull)
+        XCTAssertEqual(try JSONDecoder.clipSync.decode(SyncSentence.self, from: data), sentence)
+    }
+
     func testValidatorRejectsUnsortedSentenceIndices() {
         var sync = fixture()
         sync.sentences = [sync.sentences[1], sync.sentences[0]]

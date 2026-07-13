@@ -326,7 +326,7 @@ public enum Matcher {
             let step = (right - left) / Double(raw.count)
             sentences[index].startS = left
             sentences[index].endS = right
-            sentences[index].conf = 0
+            sentences[index].conf = min(sentences[index - 1].conf, sentences[index + 1].conf) * 0.5
             sentences[index].words = raw.enumerated().map { offset, word in
                 TimedWord(w: word, s: left + Double(offset) * step, e: left + Double(offset + 1) * step)
             }

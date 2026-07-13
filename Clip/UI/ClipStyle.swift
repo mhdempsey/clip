@@ -4,10 +4,25 @@ import UIKit
 
 enum ClipTypography {
     static func body(_ size: CGFloat = 17) -> Font { ClipDesign.bodyFont(size: size) }
-    static func title(_ size: CGFloat = 28) -> Font { ClipDesign.mediumFont(size: size) }
+    static func title(_ size: CGFloat = 28) -> Font { ClipDesign.mediumFont(size: size, relativeTo: .title2) }
     static func semibold(_ size: CGFloat = 17) -> Font { ClipDesign.semiboldFont(size: size) }
     static func italic(_ size: CGFloat = 17) -> Font { ClipDesign.italicFont(size: size) }
     static func time(_ size: CGFloat = 15) -> Font { .system(size: size, design: .rounded).monospacedDigit() }
+}
+
+struct ClipScreenTitle: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(ClipDesign.mediumFont(size: 42, relativeTo: .largeTitle))
+            .foregroundStyle(ClipDesign.ink)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 struct SmallCapsLabel: View {

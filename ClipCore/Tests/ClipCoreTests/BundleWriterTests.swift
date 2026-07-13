@@ -45,14 +45,50 @@ final class BundleWriterTests: XCTestCase {
         let sentinel = existing.appendingPathComponent("sentinel")
         try Data("keep".utf8).write(to: sentinel)
         let source = root.appendingPathComponent("source.epub")
+        let audio = root.appendingPathComponent("part01.m4a")
         try Data().write(to: source)
+        try Data("audio".utf8).write(to: audio)
         var invalid = fixture()
         invalid.sentences[0].conf = 2
 
-        await XCTAssertThrowsErrorAsync {
-            try await BundleWriter.write(sync: invalid, audioFiles: [], sourceEPUB: source, coverImage: nil, to: root)
+        do {
+            _ = try await BundleWriter.write(sync: invalid, audioFiles: [audio], sourceEPUB: source, coverImage: nil, to: root)
+            XCTFail("Expected invalid sync to be rejected")
+        } catch {
+            XCTAssertEqual(error as? SyncValidationError, .invalidSentence(index: 0))
         }
         XCTAssertEqual(try Data(contentsOf: sentinel), Data("keep".utf8))
+    }
+
+    func testValidWriteReplacesExistingBundleCompletely() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let input = root.appendingPathComponent("input")
+        try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let existing = root.appendingPathComponent("Test Book.clipbook")
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        let sentinel = existing.appendingPathComponent("sentinel")
+        try Data("old".utf8).write(to: sentinel)
+        let audio = input.appendingPathComponent("part01.m4a")
+        let source = input.appendingPathComponent("source.epub")
+        try Data("new audio".utf8).write(to: audio)
+        try Data("new epub".utf8).write(to: source)
+
+        let result = try await BundleWriter.write(
+            sync: fixture(),
+            audioFiles: [audio],
+            sourceEPUB: source,
+            coverImage: nil,
+            to: root
+        )
+
+        XCTAssertEqual(result.bundleURL.standardizedFileURL.path, existing.standardizedFileURL.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sentinel.path))
+        XCTAssertEqual(try Data(contentsOf: existing.appendingPathComponent("audio/part01.m4a")), Data("new audio".utf8))
+        XCTAssertEqual(try Data(contentsOf: existing.appendingPathComponent("source.epub")), Data("new epub".utf8))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: existing.appendingPathComponent("sync.json").path))
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains { $0.hasSuffix(".tmp") })
     }
 
     private func fixture() -> ClipBookSync {
@@ -67,15 +103,4 @@ final class BundleWriterTests: XCTestCase {
             ]
         )
     }
-}
-
-private func XCTAssertThrowsErrorAsync(
-    _ expression: () async throws -> Void,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) async {
-    do {
-        try await expression()
-        XCTFail("Expected error", file: file, line: line)
-    } catch {}
 }

@@ -65,6 +65,12 @@ public enum EPUBReaderError: Error, LocalizedError, Sendable {
     case invalidPackage
     case missingSpineItem(String)
     case unreadableDocument(String)
+    case unsafePath(String)
+    case archiveTooManyEntries
+    case archiveTooLarge
+    case archiveEntryTooLarge(String)
+    case archiveEntryCompressionRatio(String)
+    case archiveContainsSymbolicLink(String)
 
     public var errorDescription: String? {
         switch self {
@@ -74,6 +80,12 @@ public enum EPUBReaderError: Error, LocalizedError, Sendable {
         case .invalidPackage: "The EPUB package document is invalid."
         case let .missingSpineItem(id): "The EPUB spine references missing item \(id)."
         case let .unreadableDocument(href): "The EPUB document \(href) could not be read."
+        case let .unsafePath(path): "The EPUB contains an unsafe path: \(path)."
+        case .archiveTooManyEntries: "The EPUB contains too many files."
+        case .archiveTooLarge: "The EPUB expands beyond the supported size."
+        case let .archiveEntryTooLarge(path): "The EPUB file \(path) is too large."
+        case let .archiveEntryCompressionRatio(path): "The EPUB file \(path) has an unsafe compression ratio."
+        case let .archiveContainsSymbolicLink(path): "The EPUB contains a symbolic link: \(path)."
         }
     }
 }
@@ -81,6 +93,7 @@ public enum EPUBReaderError: Error, LocalizedError, Sendable {
 public enum EPUBReader {
     public static func read(from epubURL: URL) throws -> EPUBBook {
         let fileManager = FileManager.default
+        try preflightArchive(at: epubURL)
         let extractionURL = fileManager.temporaryDirectory.appendingPathComponent("Clip-EPUB-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: extractionURL, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: extractionURL) }
@@ -92,7 +105,7 @@ public enum EPUBReader {
         try parseXML(at: containerURL, delegate: containerDelegate)
         guard let packagePath = containerDelegate.packagePath, !packagePath.isEmpty else { throw EPUBReaderError.invalidContainer }
 
-        let packageURL = extractionURL.appendingPathComponent(packagePath)
+        let packageURL = try resolvedURL(for: packagePath, relativeTo: extractionURL, extractionRoot: extractionURL)
         guard fileManager.fileExists(atPath: packageURL.path) else { throw EPUBReaderError.missingPackage }
         let packageDelegate = PackageDelegate()
         try parseXML(at: packageURL, delegate: packageDelegate)
@@ -107,7 +120,7 @@ public enum EPUBReader {
             guard let item = packageDelegate.manifest[idref] else { throw EPUBReaderError.missingSpineItem(idref) }
             guard !shouldSkip(item) else { continue }
             let href = item.href.removingPercentEncoding ?? item.href
-            let documentURL = baseURL.appendingPathComponent(href)
+            let documentURL = try resolvedURL(for: href, relativeTo: baseURL, extractionRoot: extractionURL)
             guard let data = try? Data(contentsOf: documentURL), let xhtml = decodeText(data) else {
                 throw EPUBReaderError.unreadableDocument(item.href)
             }
@@ -164,7 +177,8 @@ public enum EPUBReader {
 
         let coverData: Data?
         if let coverItem = packageDelegate.coverItem {
-            coverData = try? Data(contentsOf: baseURL.appendingPathComponent(coverItem.href.removingPercentEncoding ?? coverItem.href))
+            let coverURL = try resolvedURL(for: coverItem.href, relativeTo: baseURL, extractionRoot: extractionURL)
+            coverData = try? Data(contentsOf: coverURL)
         } else {
             coverData = nil
         }
@@ -186,6 +200,35 @@ public enum EPUBReader {
             name == "nav" || name == "toc" || name == "cover" || name.hasPrefix("toc_")
     }
 
+    private static func preflightArchive(at url: URL) throws {
+        let archive = try Archive(url: url, accessMode: .read)
+        var entryCount = 0
+        var totalUncompressedSize: UInt64 = 0
+        for entry in archive {
+            entryCount += 1
+            try EPUBArchivePreflight.validate(
+                path: entry.path,
+                isSymbolicLink: entry.type == .symlink,
+                compressedSize: entry.compressedSize,
+                uncompressedSize: entry.uncompressedSize,
+                entryCount: entryCount,
+                totalUncompressedSize: &totalUncompressedSize
+            )
+        }
+    }
+
+    private static func resolvedURL(for rawPath: String, relativeTo baseURL: URL, extractionRoot: URL) throws -> URL {
+        let decoded = rawPath.removingPercentEncoding ?? rawPath
+        let path = decoded.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? decoded
+        guard !path.isEmpty, !(path as NSString).isAbsolutePath else { throw EPUBReaderError.unsafePath(rawPath) }
+        let root = extractionRoot.standardizedFileURL
+        let candidate = baseURL.appendingPathComponent(path).standardizedFileURL
+        guard candidate.path == root.path || candidate.path.hasPrefix(root.path + "/") else {
+            throw EPUBReaderError.unsafePath(rawPath)
+        }
+        return candidate
+    }
+
     private static func decodeText(_ data: Data) -> String? {
         String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .isoLatin1)
     }
@@ -194,6 +237,38 @@ public enum EPUBReader {
         guard let parser = XMLParser(contentsOf: url) else { throw EPUBReaderError.invalidPackage }
         parser.delegate = delegate
         guard parser.parse() else { throw parser.parserError ?? EPUBReaderError.invalidPackage }
+    }
+}
+
+enum EPUBArchivePreflight {
+    static let maximumEntryCount = 10_000
+    static let maximumTotalUncompressedSize: UInt64 = 512 * 1024 * 1024
+    static let maximumEntryUncompressedSize: UInt64 = 128 * 1024 * 1024
+    static let maximumCompressionRatio: UInt64 = 100
+
+    static func validate(
+        path: String,
+        isSymbolicLink: Bool,
+        compressedSize: UInt64,
+        uncompressedSize: UInt64,
+        entryCount: Int,
+        totalUncompressedSize: inout UInt64
+    ) throws {
+        guard entryCount <= maximumEntryCount else { throw EPUBReaderError.archiveTooManyEntries }
+        guard !isSymbolicLink else { throw EPUBReaderError.archiveContainsSymbolicLink(path) }
+        guard uncompressedSize <= maximumEntryUncompressedSize else { throw EPUBReaderError.archiveEntryTooLarge(path) }
+
+        let (newTotal, overflow) = totalUncompressedSize.addingReportingOverflow(uncompressedSize)
+        guard !overflow, newTotal <= maximumTotalUncompressedSize else { throw EPUBReaderError.archiveTooLarge }
+        totalUncompressedSize = newTotal
+
+        if uncompressedSize > 0 {
+            guard compressedSize > 0 else { throw EPUBReaderError.archiveEntryCompressionRatio(path) }
+            let (ratioLimit, ratioOverflow) = compressedSize.multipliedReportingOverflow(by: maximumCompressionRatio)
+            if !ratioOverflow, uncompressedSize > ratioLimit {
+                throw EPUBReaderError.archiveEntryCompressionRatio(path)
+            }
+        }
     }
 }
 

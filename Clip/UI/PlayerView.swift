@@ -81,8 +81,15 @@ struct PlayerView: View {
             }
         }
         .background(ClipDesign.paper.ignoresSafeArea())
-        .navigationTitle("Listen")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Listen")
+                    .font(ClipTypography.title(21))
+                    .foregroundStyle(ClipDesign.ink)
+            }
+        }
         .sheet(isPresented: $showingReader) {
             if let book = player.currentBook {
                 NavigationStack { ReaderView(book: book) }

@@ -20,11 +20,23 @@ public enum ClipDesign {
     public static let terracotta = adaptiveColor(light: 0xC2542B, dark: 0xCE6B43)
     public static let terracottaPressed = adaptiveColor(light: 0xA64621, dark: 0xB5552F)
 
-    public static func bodyFont(size: CGFloat = 17) -> Font { .custom("EBGaramond-Regular", size: size) }
-    public static func mediumFont(size: CGFloat = 17) -> Font { .custom("EBGaramond-Medium", size: size) }
-    public static func semiboldFont(size: CGFloat = 17) -> Font { .custom("EBGaramond-SemiBold", size: size) }
-    public static func italicFont(size: CGFloat = 17) -> Font { .custom("EBGaramond-Italic", size: size) }
-    public static func readerFont(size: CGFloat = 20) -> Font { bodyFont(size: size) }
+    public static func bodyFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom("EBGaramond-Regular", size: size, relativeTo: style)
+    }
+
+    public static func mediumFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom("EBGaramond-Medium", size: size, relativeTo: style)
+    }
+
+    public static func semiboldFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom("EBGaramond-SemiBold", size: size, relativeTo: style)
+    }
+
+    public static func italicFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom("EBGaramond-Italic", size: size, relativeTo: style)
+    }
+
+    public static func readerFont(size: CGFloat = 20) -> Font { bodyFont(size: size, relativeTo: .body) }
     public static func timeFont(size: CGFloat = 15) -> Font { .system(size: size, weight: .regular, design: .monospaced) }
 
     private static func adaptiveColor(light: UInt32, dark: UInt32) -> Color {

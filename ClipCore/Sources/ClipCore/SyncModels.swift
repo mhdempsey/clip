@@ -171,6 +171,22 @@ public struct SyncSentence: Codable, Equatable, Sendable, Identifiable {
         self.words = words
     }
 
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(i, forKey: .i)
+        if let startS { try container.encode(startS, forKey: .startS) }
+        else { try container.encodeNil(forKey: .startS) }
+        if let endS { try container.encode(endS, forKey: .endS) }
+        else { try container.encodeNil(forKey: .endS) }
+        try container.encode(text, forKey: .text)
+        try container.encode(chapter, forKey: .chapter)
+        try container.encode(p, forKey: .p)
+        try container.encode(epub, forKey: .epub)
+        try container.encode(conf, forKey: .conf)
+        if let words { try container.encode(words, forKey: .words) }
+        else { try container.encodeNil(forKey: .words) }
+    }
+
     enum CodingKeys: String, CodingKey {
         case i, text, chapter, p, epub, conf, words
         case startS = "start_s"
@@ -267,8 +283,3 @@ public extension JSONEncoder {
 public extension JSONDecoder {
     static var clipSync: JSONDecoder { JSONDecoder() }
 }
-
-public typealias ClipBookMetadata = SyncBook
-public typealias AlignerMetadata = AlignerInfo
-public typealias AudioTrack = SyncAudio
-public typealias EPUBLocation = EPUBPosition

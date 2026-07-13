@@ -170,6 +170,8 @@ final class AlignmentJob: ObservableObject, Identifiable {
     @Published var errorMessage: String?
     @Published var detailsExpanded = false
 
+    var estimatedTotal: TimeInterval?
+
     init(source: PairingSnapshot, quality: AlignmentQuality) {
         self.source = source
         self.quality = quality

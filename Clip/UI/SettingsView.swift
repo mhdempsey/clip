@@ -13,17 +13,23 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        List {
-            readwiseSection
-            durationSection
-            pendingSection
-            voiceSection
-            aboutSection
+        VStack(alignment: .leading, spacing: 0) {
+            ClipScreenTitle("Settings")
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            List {
+                readwiseSection
+                durationSection
+                pendingSection
+                voiceSection
+                aboutSection
+            }
+            .scrollContentBackground(.hidden)
         }
-        .scrollContentBackground(.hidden)
         .background(ClipDesign.paper.ignoresSafeArea())
         .foregroundStyle(ClipDesign.ink)
-        .navigationTitle("Settings")
+        .toolbar(.hidden, for: .navigationBar)
         .font(ClipTypography.body())
         .tint(ClipDesign.ink)
         .onAppear {

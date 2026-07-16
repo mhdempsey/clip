@@ -34,27 +34,32 @@ struct RootView: View {
         }
         .background(ClipDesign.paper)
         .foregroundStyle(ClipDesign.ink)
-        .tint(ClipDesign.ink)
-        .frame(minWidth: 680, minHeight: 640)
+        .tint(ClipDesign.accent)
+        .frame(minWidth: 720, minHeight: 640)
     }
 
     private var header: some View {
-        HStack(spacing: 22) {
-            VStack(alignment: .leading, spacing: -2) {
+        HStack(spacing: 26) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Clip")
-                    .font(ClipFont.medium(32))
-                    .foregroundStyle(ClipDesign.ink)
-                Text("books in step with their voices")
-                    .font(ClipFont.italic(13))
-                    .foregroundStyle(ClipDesign.inkSecondary)
+                    .font(ClipFont.medium(38))
+                    .foregroundStyle(ClipDesign.accent)
+                HStack(spacing: 9) {
+                    Rectangle()
+                        .fill(ClipDesign.marigold)
+                        .frame(width: 24, height: 2)
+                    Text("easy highlights for audiobooks")
+                        .font(ClipFont.italic(15))
+                        .foregroundStyle(ClipDesign.inkSecondary)
+                }
             }
             Spacer()
             sectionButton("Align", section: .align)
             sectionButton("Shelf", section: .shelf)
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 16)
-        .background(ClipDesign.surface)
+        .padding(.horizontal, 30)
+        .padding(.vertical, 19)
+        .background(ClipDesign.paper)
     }
 
     private func sectionButton(_ title: String, section: MainSection) -> some View {
@@ -62,9 +67,9 @@ struct RootView: View {
             withAnimation(.easeInOut(duration: 0.16)) { model.section = section }
         } label: {
             VStack(spacing: 5) {
-                SmallCapsLabel(text: title, color: model.section == section ? ClipDesign.ink : ClipDesign.inkSecondary)
+                SmallCapsLabel(text: title, color: model.section == section ? ClipDesign.accent : ClipDesign.inkSecondary)
                 Rectangle()
-                    .fill(model.section == section ? ClipDesign.ink : Color.clear)
+                    .fill(model.section == section ? ClipDesign.bloom : Color.clear)
                     .frame(height: 1)
             }
         }

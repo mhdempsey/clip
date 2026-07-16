@@ -13,7 +13,7 @@ struct LibraryView: View {
                 ClipScreenTitle("Library")
                     .padding(.top, 12)
                 if !importer.iCloudAvailable {
-                    statusLine("iCloud Drive is off. Sign in to iCloud to see books aligned on your Mac.")
+                    statusLine("iCloud Drive is off. AirDrop or open a .clipbook from Files, or sign in to sync books from your Mac.")
                 }
                 if let error = importer.lastError {
                     statusLine(error)
@@ -58,7 +58,7 @@ struct LibraryView: View {
             Text("The shelf is empty")
                 .font(ClipTypography.title(28))
                 .foregroundStyle(ClipDesign.ink)
-            Text("Align a book on your Mac and it will appear here.")
+            Text("AirDrop a .clipbook or open one from Files. Books aligned on your Mac also appear here.")
                 .font(ClipTypography.body(18))
                 .foregroundStyle(ClipDesign.inkSecondary)
                 .multilineTextAlignment(.center)

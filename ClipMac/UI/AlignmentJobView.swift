@@ -64,7 +64,7 @@ struct AlignmentJobView: View {
                 }
             }
             if job.stage == .downloadingModel {
-                Text("This one-time download is about 1.5 GB. Everything runs privately on your Mac.")
+                Text("This one-time download is optimized for this Mac. Everything runs privately here.")
                     .font(ClipFont.regular(14))
                     .foregroundStyle(ClipDesign.inkSecondary)
             }
@@ -158,4 +158,3 @@ struct AlignmentJobView: View {
         .accessibilityIdentifier("alignment-error")
     }
 }
-

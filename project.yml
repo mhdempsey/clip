@@ -12,7 +12,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
-    CURRENT_PROJECT_VERSION: 1
+    CURRENT_PROJECT_VERSION: 8
     MARKETING_VERSION: 1.0
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ZV897Q6SZF
@@ -26,7 +26,12 @@ packages:
     from: 6.27.0
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
-    from: 0.9.0
+    exactVersion: 0.18.0
+  # swift-transformers 1.1.9, used by WhisperKit 0.18.0, is not
+  # source-compatible with swift-jinja 2.4.0.
+  SwiftJinja:
+    url: https://github.com/huggingface/swift-jinja.git
+    exactVersion: 2.3.6
 
 targets:
   ClipMac:
@@ -39,6 +44,8 @@ targets:
     dependencies:
       - package: ClipCore
       - package: WhisperKit
+      - package: SwiftJinja
+        product: Jinja
     entitlements:
       path: Config/ClipMac.entitlements
       properties:
@@ -54,6 +61,8 @@ targets:
     info:
       path: Config/ClipMac-Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Clip for Mac
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "Copyright © 2026 Michael Dempsey"
@@ -61,9 +70,17 @@ targets:
           iCloud.com.michael.clip:
             NSUbiquitousContainerIsDocumentScopePublic: true
             NSUbiquitousContainerName: Clip
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.michael.clip.clipbook
+            UTTypeDescription: Clip audiobook
+            UTTypeConformsTo:
+              - com.apple.package
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - clipbook
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.mac
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip
         PRODUCT_NAME: Clip
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
@@ -94,6 +111,8 @@ targets:
     info:
       path: Config/Clip-Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Clip
         LSApplicationCategoryType: public.app-category.books
         UILaunchScreen:
@@ -116,6 +135,26 @@ targets:
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         NSSiriUsageDescription: Clip uses Siri to save highlights while you listen.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Clip audiobook
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.michael.clip.clipbook
+        LSSupportsOpeningDocumentsInPlace: true
+        NSUbiquitousContainers:
+          iCloud.com.michael.clip:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: Clip
+            NSUbiquitousContainerSupportedFolderLevels: Any
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.michael.clip.clipbook
+            UTTypeDescription: Clip audiobook
+            UTTypeConformsTo:
+              - com.apple.package
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - clipbook
         UIAppFonts:
           - EBGaramond-Regular.ttf
           - EBGaramond-Medium.ttf
@@ -130,6 +169,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip
         PRODUCT_NAME: Clip
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  ClipTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ClipTests
+    dependencies:
+      - target: Clip
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.tests
 
   ClipWidgets:
     type: app-extension
@@ -147,6 +198,8 @@ targets:
     info:
       path: Config/ClipWidgets-Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Clip Activity
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -170,7 +223,13 @@ schemes:
       targets:
         Clip: all
         ClipWidgets: all
+        ClipTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: ClipTests
+          parallelizable: false
     archive:
       config: Release

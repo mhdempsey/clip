@@ -9,6 +9,7 @@ enum AppGroup {
     enum Key {
         static let currentBookID = ClipShared.DefaultsKey.currentBookID
         static let currentPosition = ClipShared.DefaultsKey.currentPosition
+        static let playbackRate = ClipShared.DefaultsKey.playbackRate
         static let clipWindow = ClipShared.DefaultsKey.clipWindow
         static let interruptionPosition = ClipShared.DefaultsKey.interruptionPosition
         static let interruptionDate = ClipShared.DefaultsKey.interruptionDate

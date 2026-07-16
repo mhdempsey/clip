@@ -1,9 +1,12 @@
 import Foundation
+import ClipCore
+import CoreML
 import WhisperKit
 
 enum TranscriptionUpdate: Sendable {
     case cacheLookup
     case modelDownload(fraction: Double)
+    case modelLoading
     case listening(fraction: Double, cacheHit: Bool)
 }
 
@@ -21,14 +24,23 @@ actor WhisperTranscriber {
         let urls = audio.map(\.url)
         update(.cacheLookup)
         let hash = try await cache.audioSetHash(urls)
-        if let words = try await cache.load(hash: hash, model: quality.modelName) {
+        let modelVariant = ClipShared.whisperKitRepositoryVariant(
+            for: quality.modelName,
+            supportedModels: WhisperKit.recommendedModels().supported
+        )
+        if let words = try await cache.load(hash: hash, model: modelVariant) {
             update(.listening(fraction: 1, cacheHit: true))
             return words
         }
 
-        let modelPath = try await resolveModel(quality.modelName, update: update)
-        let kit = try await loadedKit(for: quality.modelName, at: modelPath)
-        let options = DecodingOptions(wordTimestamps: true, chunkingStrategy: .vad)
+        let modelPath = try await resolveModel(modelVariant, update: update)
+        update(.modelLoading)
+        let kit = try await loadedKit(for: modelVariant, at: modelPath)
+        let options = DecodingOptions(
+            wordTimestamps: true,
+            concurrentWorkerCount: 1,
+            chunkingStrategy: .vad
+        )
 
         let totalDuration = max(1, audio.compactMap(\.duration).reduce(0, +))
         var completedDuration: TimeInterval = 0
@@ -41,8 +53,12 @@ actor WhisperTranscriber {
                 audioPath: source.url.path,
                 decodeOptions: options
             ) { progress in
-                let heardSeconds = min(fileDuration, progress.timings.totalDecodingWindows * 30)
-                let fraction = min(0.995, (fileOffset + heardSeconds) / totalDuration)
+                let fraction = ClipShared.transcriptionFraction(
+                    fileOffset: fileOffset,
+                    fileDuration: fileDuration,
+                    totalDuration: totalDuration,
+                    activeWindowIndex: Double(progress.windowId)
+                )
                 update(.listening(fraction: fraction, cacheHit: false))
                 return true
             }
@@ -63,15 +79,25 @@ actor WhisperTranscriber {
             update(.listening(fraction: min(0.995, completedDuration / totalDuration), cacheHit: false))
         }
 
-        try await cache.save(words, hash: hash, model: quality.modelName)
+        try await cache.save(words, hash: hash, model: modelVariant)
         update(.listening(fraction: 1, cacheHit: false))
         return words
     }
 
     private func loadedKit(for model: String, at modelPath: URL) async throws -> WhisperKit {
         if loadedModel == model, let loadedKit { return loadedKit }
+        // WhisperKit defaults the encoder and decoder to the Neural Engine on
+        // recent macOS versions. The current large-v3 model repeatedly fails
+        // there on M1 Macs, while Core ML's CPU/GPU path runs it reliably.
+        let computeOptions = ModelComputeOptions(
+            melCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU,
+            prefillCompute: .cpuOnly
+        )
         let kit = try await WhisperKit(
             modelFolder: modelPath.path,
+            computeOptions: computeOptions,
             verbose: false,
             prewarm: true,
             load: true,
@@ -83,10 +109,10 @@ actor WhisperTranscriber {
     }
 
     private func resolveModel(
-        _ model: String,
+        _ modelVariant: String,
         update: @escaping @Sendable (TranscriptionUpdate) -> Void
     ) async throws -> URL {
-        let key = "Clip.WhisperModelPath.\(model)"
+        let key = "Clip.WhisperModelPath.\(modelVariant)"
         if let path = defaults.string(forKey: key), FileManager.default.fileExists(atPath: path) {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
@@ -103,7 +129,7 @@ actor WhisperTranscriber {
         try FileManager.default.createDirectory(at: modelRoot, withIntermediateDirectories: true)
 
         let path = try await WhisperKit.download(
-            variant: model,
+            variant: modelVariant,
             downloadBase: modelRoot,
             progressCallback: { progress in
                 update(.modelDownload(fraction: progress.fractionCompleted))

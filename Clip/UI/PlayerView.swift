@@ -43,6 +43,11 @@ struct PlayerView: View {
                         transportButton("goforward.15", label: "Forward 15 seconds") { player.skip(by: 15) }
                     }
 
+                    PlaybackSpeedControl(
+                        value: player.playbackRate,
+                        onChange: player.setPlaybackRate
+                    )
+
                     DurationStampPicker(selection: $settings.clipWindowSeconds)
                     ClipPrimaryButton(title: "Clip \(settings.clipWindowSeconds)s", systemImage: "scissors") {
                         guard !clipping else { return }
@@ -142,6 +147,44 @@ struct PlayerView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityIdentifier("player.\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+    }
+}
+
+private struct PlaybackSpeedControl: View {
+    let value: Double
+    let onChange: (Double) -> Void
+
+    private var formattedValue: String {
+        "\(value.formatted(.number.precision(.fractionLength(1))))×"
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                SmallCapsLabel(text: "Playback speed")
+                Spacer()
+                Text(formattedValue)
+                    .font(ClipTypography.time(15))
+                    .foregroundStyle(ClipDesign.ink)
+                    .contentTransition(.numericText())
+            }
+            Slider(
+                value: Binding(get: { value }, set: onChange),
+                in: ClipShared.playbackRateRange,
+                step: 0.1
+            ) {
+                Text("Playback speed")
+            } minimumValueLabel: {
+                Text("1×")
+            } maximumValueLabel: {
+                Text("3×")
+            }
+            .tint(ClipDesign.terracotta)
+            .font(ClipTypography.time(12))
+            .foregroundStyle(ClipDesign.inkSecondary)
+            .accessibilityValue("\(formattedValue) speed")
+            .accessibilityIdentifier("player.speed-slider")
+        }
     }
 }
 

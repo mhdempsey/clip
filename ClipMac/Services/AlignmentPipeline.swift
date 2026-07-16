@@ -41,6 +41,12 @@ enum AlignmentPipeline {
                 update(.stage(.preparing, detail: "Looking for an earlier listening pass.", fraction: 0.07))
             case let .modelDownload(fraction):
                 update(.modelDownload(fraction: fraction))
+            case .modelLoading:
+                update(.stage(
+                    .preparing,
+                    detail: "Loading the listening model optimized for this Mac.",
+                    fraction: 0.08
+                ))
             case let .listening(fraction, cacheHit):
                 update(.listening(fraction: fraction, cacheHit: cacheHit))
             }

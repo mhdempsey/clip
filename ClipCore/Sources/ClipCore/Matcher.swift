@@ -46,6 +46,14 @@ public enum Matcher {
             return MatchResult(sentences: sentences.map(untimedSentence), coverage: 0)
         }
 
+        // WhisperKit can return completed VAD chunks out of order. Keep stable
+        // ordering for equal timestamps while restoring chronological order.
+        let chronologicalTranscript = transcript.enumerated().sorted { left, right in
+            if left.element.s != right.element.s { return left.element.s < right.element.s }
+            if left.element.e != right.element.e { return left.element.e < right.element.e }
+            return left.offset < right.offset
+        }.map(\.element)
+
         var bookTokens: [BookToken] = []
         var sentenceTokenCounts = Array(repeating: 0, count: sentences.count)
         for (sentenceOffset, sentence) in sentences.enumerated() {
@@ -57,7 +65,7 @@ public enum Matcher {
             }
         }
         var transcriptTokens: [TranscriptToken] = []
-        for (offset, word) in transcript.enumerated() {
+        for (offset, word) in chronologicalTranscript.enumerated() {
             for normalized in normalize(word.w) {
                 transcriptTokens.append(TranscriptToken(value: normalized, transcriptOffset: offset))
             }
@@ -96,12 +104,18 @@ public enum Matcher {
                 result.append(untimedSentence(source))
                 continue
             }
-            let words = transcriptOffsets.map { TimedWord(w: transcript[$0].w, s: transcript[$0].s, e: transcript[$0].e) }
+            let words = transcriptOffsets.map {
+                TimedWord(
+                    w: chronologicalTranscript[$0].w,
+                    s: chronologicalTranscript[$0].s,
+                    e: chronologicalTranscript[$0].e
+                )
+            }
             let denominator = max(1, sentenceTokenCounts[offset])
             result.append(SyncSentence(
                 i: source.i,
-                startS: transcript[first].s,
-                endS: transcript[last].e,
+                startS: chronologicalTranscript[first].s,
+                endS: chronologicalTranscript[last].e,
                 text: source.text,
                 chapter: source.chapter,
                 p: source.p,

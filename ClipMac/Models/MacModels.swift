@@ -181,6 +181,7 @@ final class AlignmentJob: ObservableObject, Identifiable {
 
     var progressLabel: String {
         switch stage {
+        case .listening where progress > 0 && progress < 0.01: "Listening <1%"
         case .listening: "Listening \(Int(progress * 100))%"
         case .downloadingModel: "Preparing \(Int((modelDownloadProgress ?? 0) * 100))%"
         default: stage.label

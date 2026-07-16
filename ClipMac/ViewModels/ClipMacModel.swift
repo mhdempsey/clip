@@ -242,14 +242,19 @@ final class ClipMacModel: ObservableObject {
                         job.stage = stage
                         job.detail = detail
                         job.progress = fraction
+                        if stage != .downloadingModel {
+                            job.modelDownloadProgress = nil
+                        }
                     case let .modelDownload(fraction):
                         job.stage = .downloadingModel
                         job.modelDownloadProgress = fraction
                         job.progress = min(0.08, fraction * 0.08)
                         job.detail = "Clip downloads its listening tools once. Everything stays private on your Mac."
                     case let .listening(fraction, cacheHit):
+                        let priorListeningProgress = job.stage == .listening ? job.progress : 0
                         job.stage = .listening
-                        job.progress = fraction
+                        job.progress = max(priorListeningProgress, fraction)
+                        job.modelDownloadProgress = nil
                         job.detail = cacheHit ? "Using the private listening pass already on this Mac." : "Listening privately on this Mac."
                         if let estimate = job.estimatedTotal {
                             job.estimatedRemaining = max(0, estimate * (1 - fraction))

@@ -12,10 +12,17 @@ final class AppModel: ObservableObject {
     let settings: ClipSettings
 
     private let database: ClipDatabase
+    private let player: PlayerEngine
+    private var playerLoadTask: Task<Void, Never>?
 
-    init(database: ClipDatabase = .shared) {
+    init(
+        database: ClipDatabase = .shared,
+        player: PlayerEngine? = nil,
+        localBooksDirectory: URL = AppGroup.containerURL.appendingPathComponent("Books", isDirectory: true)
+    ) {
         self.database = database
-        importer = BundleImporter(database: database)
+        self.player = player ?? .shared
+        importer = BundleImporter(database: database, localBooksDirectory: localBooksDirectory)
         settings = ClipSettings()
         importer.onImport = { [weak self] in self?.reloadBooks() }
         reloadBooks()
@@ -29,6 +36,17 @@ final class AppModel: ObservableObject {
 
     func open(_ book: BookRecord) {
         selectedTab = .player
-        Task { await PlayerEngine.shared.load(book, autoplay: false) }
+        playerLoadTask?.cancel()
+        playerLoadTask = Task { await player.load(book, autoplay: false) }
+    }
+
+    func importBook(from url: URL) async {
+        do {
+            let book = try await importer.importLocalBundle(at: url)
+            reloadBooks()
+            open(book)
+        } catch {
+            alertMessage = "Couldn’t import \(url.deletingPathExtension().lastPathComponent): \(error.localizedDescription)"
+        }
     }
 }

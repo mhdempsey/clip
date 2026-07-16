@@ -68,6 +68,26 @@ final class MatcherTests: XCTestCase {
         XCTAssertEqual(result.coverage, 0)
     }
 
+    func testOutOfOrderTranscriptChunksCannotCreateInvalidWordTiming() {
+        let sentences = [
+            epubSentence(0, "Thank you.", paragraph: 0),
+            epubSentence(1, "Tommy was looking at me.", paragraph: 1),
+        ]
+        let transcript = [
+            TranscriptWord(w: "Thank", s: 30, e: 31),
+            TranscriptWord(w: "you", s: 31, e: 32),
+            TranscriptWord(w: "Tommy", s: 10, e: 11),
+            TranscriptWord(w: "was", s: 11, e: 12),
+            TranscriptWord(w: "looking", s: 12, e: 13),
+            TranscriptWord(w: "at", s: 13, e: 14),
+            TranscriptWord(w: "me", s: 14, e: 15),
+        ]
+
+        let result = Matcher.align(sentences: sentences, transcript: transcript)
+
+        assertValidTimings(result.sentences)
+    }
+
     private func makeSentences(count: Int) -> [EPUBSentence] {
         let vocabulary = ["albatross", "lantern", "harbor", "compass", "whaleboat", "horizon", "starboard", "weather", "current", "island", "captain", "sailor"]
         return (0..<count).map { i in
@@ -105,6 +125,13 @@ final class MatcherTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(start, previousStart, file: file, line: line)
             XCTAssertGreaterThanOrEqual(end, start, file: file, line: line)
             XCTAssertLessThanOrEqual(previousEnd - start, 0.25 + 1e-9, file: file, line: line)
+            for word in sentence.words ?? [] {
+                XCTAssertFalse(word.w.isEmpty, file: file, line: line)
+                XCTAssertTrue(word.s.isFinite, file: file, line: line)
+                XCTAssertTrue(word.e.isFinite, file: file, line: line)
+                XCTAssertGreaterThanOrEqual(word.s, 0, file: file, line: line)
+                XCTAssertGreaterThanOrEqual(word.e, word.s, file: file, line: line)
+            }
             previousStart = start
             previousEnd = end
         }

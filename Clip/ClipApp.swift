@@ -58,6 +58,9 @@ struct ClipApp: App {
                 Text(model.alertMessage ?? "")
             }
             .onAppear { model.importer.refresh() }
+            .onOpenURL { url in
+                Task { await model.importBook(from: url) }
+            }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active:

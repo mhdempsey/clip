@@ -37,7 +37,7 @@ final class NowPlaying {
         }
     }
 
-    func update(book: BookRecord?, elapsed: Double, isPlaying: Bool) {
+    func update(book: BookRecord?, elapsed: Double, isPlaying: Bool, playbackRate: Double) {
         guard let book else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             artworkBookID = nil
@@ -49,7 +49,8 @@ final class NowPlaying {
             MPMediaItemPropertyArtist: book.author,
             MPMediaItemPropertyPlaybackDuration: book.durationS,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? playbackRate : 0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: playbackRate,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
         ]
         if artworkBookID != book.id {

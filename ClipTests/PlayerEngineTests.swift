@@ -104,6 +104,63 @@ final class PlayerEngineTests: XCTestCase {
         XCTAssertTrue(engine.playbackError?.contains("audio files are missing") == true)
     }
 
+    func testUbiquitousBundleDownloadsSyncMetadataBeforeLoading() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        let syncURL = fixture.book.bundleFileURL.appendingPathComponent("sync.json")
+        let syncData = try Data(contentsOf: syncURL)
+        try FileManager.default.removeItem(at: syncURL)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let fileManager = UbiquitousBundleFileManager(
+            bundleURL: fixture.book.bundleFileURL,
+            syncURL: syncURL,
+            syncData: syncData
+        )
+        let resourceLoader = BundleResourceLoader(
+            fileManager: fileManager,
+            pollInterval: .milliseconds(1),
+            cloudRetryCount: 2
+        )
+        let engine = PlayerEngine(database: fixture.database, resourceLoader: resourceLoader)
+
+        await engine.load(fixture.book)
+
+        XCTAssertEqual(engine.currentBook?.id, fixture.book.id)
+        XCTAssertNil(engine.playbackError)
+        XCTAssertTrue(fileManager.requestedURLs.contains(fixture.book.bundleFileURL))
+        XCTAssertTrue(fileManager.requestedURLs.contains(syncURL))
+    }
+
+    func testUbiquitousBundleReportsSyncMetadataDownloadTimeout() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        let syncURL = fixture.book.bundleFileURL.appendingPathComponent("sync.json")
+        let syncData = try Data(contentsOf: syncURL)
+        try FileManager.default.removeItem(at: syncURL)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let fileManager = UbiquitousBundleFileManager(
+            bundleURL: fixture.book.bundleFileURL,
+            syncURL: syncURL,
+            syncData: syncData,
+            completesDownload: false
+        )
+        let resourceLoader = BundleResourceLoader(
+            fileManager: fileManager,
+            pollInterval: .milliseconds(1),
+            cloudRetryCount: 1
+        )
+        let engine = PlayerEngine(database: fixture.database, resourceLoader: resourceLoader)
+
+        await engine.load(fixture.book)
+
+        XCTAssertNil(engine.currentBook)
+        XCTAssertTrue(engine.playbackError?.contains("couldn’t finish downloading sync.json from iCloud") == true)
+    }
+
     func testChapterTitlesComeFromPlaybackManifest() async throws {
         let fixture = try makeFixture(includeAudio: true)
         defer {
@@ -164,5 +221,32 @@ final class PlayerEngineTests: XCTestCase {
 
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
         try file.write(from: buffer)
+    }
+}
+
+private final class UbiquitousBundleFileManager: FileManager {
+    let bundleURL: URL
+    let syncURL: URL
+    let syncData: Data
+    let completesDownload: Bool
+    private(set) var requestedURLs: [URL] = []
+
+    init(bundleURL: URL, syncURL: URL, syncData: Data, completesDownload: Bool = true) {
+        self.bundleURL = bundleURL
+        self.syncURL = syncURL
+        self.syncData = syncData
+        self.completesDownload = completesDownload
+        super.init()
+    }
+
+    override func isUbiquitousItem(at url: URL) -> Bool {
+        url.standardizedFileURL == bundleURL.standardizedFileURL
+    }
+
+    override func startDownloadingUbiquitousItem(at url: URL) throws {
+        requestedURLs.append(url)
+        if completesDownload, url.standardizedFileURL == bundleURL.standardizedFileURL {
+            try syncData.write(to: syncURL, options: .atomic)
+        }
     }
 }

@@ -40,6 +40,7 @@ final class BundleImporter: NSObject, ObservableObject {
     private let query = NSMetadataQuery()
     private let database: ClipDatabase
     private let localBooksDirectory: URL
+    private let resourceLoader: BundleResourceLoader
     private var observers: [NSObjectProtocol] = []
     private var inFlightPaths: Set<String> = []
     private var pendingImportPaths: Set<String> = []
@@ -48,10 +49,12 @@ final class BundleImporter: NSObject, ObservableObject {
 
     init(
         database: ClipDatabase = .shared,
-        localBooksDirectory: URL = AppGroup.containerURL.appendingPathComponent("Books", isDirectory: true)
+        localBooksDirectory: URL = AppGroup.containerURL.appendingPathComponent("Books", isDirectory: true),
+        resourceLoader: BundleResourceLoader = BundleResourceLoader()
     ) {
         self.database = database
         self.localBooksDirectory = localBooksDirectory
+        self.resourceLoader = resourceLoader
         super.init()
         query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
         query.predicate = NSPredicate(format: "%K ENDSWITH[c] %@", NSMetadataItemFSNameKey, ".clipbook")
@@ -180,20 +183,33 @@ final class BundleImporter: NSObject, ObservableObject {
         }
         let syncURL = url.appendingPathComponent("sync.json")
         do {
-            let values = try syncURL.resourceValues(forKeys: [.contentModificationDateKey])
-            let modified = values.contentModificationDate?.timeIntervalSince1970 ?? 0
             var importDates = AppGroup.defaults.dictionary(forKey: AppGroup.Key.importDates) as? [String: Double] ?? [:]
-            if importDates[url.path] == modified { return }
+            let initialModified = try? syncURL.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate?.timeIntervalSince1970
+            if let initialModified, importDates[url.path] == initialModified {
+                lastError = nil
+                return
+            }
+
+            let data = try await resourceLoader.data(at: syncURL, in: url)
+            let modified: Double
+            if let initialModified {
+                modified = initialModified
+            } else {
+                modified = try syncURL.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate?.timeIntervalSince1970 ?? 0
+            }
 
             let id = Self.stableID(for: url)
             let prepared = try await Task.detached(priority: .utility) {
-                try Self.prepareBundle(contentURL: url, bookURL: url, id: id)
+                try Self.prepareBundle(contentURL: url, bookURL: url, id: id, syncData: data)
             }.value
             try await Task.detached(priority: .utility) { [database] in
                 try database.save(book: prepared.book, sentences: prepared.sentences)
             }.value
             importDates[url.path] = modified
             AppGroup.defaults.set(importDates, forKey: AppGroup.Key.importDates)
+            lastError = nil
             onImport?()
         } catch {
             lastError = "Couldn’t open \(url.deletingPathExtension().lastPathComponent): \(error.localizedDescription)"
@@ -238,10 +254,16 @@ final class BundleImporter: NSObject, ObservableObject {
     nonisolated private static func prepareBundle(
         contentURL: URL,
         bookURL: URL,
-        id: String
+        id: String,
+        syncData: Data? = nil
     ) throws -> PreparedBundle {
         let syncURL = contentURL.appendingPathComponent("sync.json")
-        let data = try Data(contentsOf: syncURL, options: .mappedIfSafe)
+        let data: Data
+        if let syncData {
+            data = syncData
+        } else {
+            data = try Data(contentsOf: syncURL, options: .mappedIfSafe)
+        }
         let sync = try JSONDecoder.clipSync.decode(ClipBookSync.self, from: data)
         try sync.validate()
 

@@ -1,4 +1,10 @@
-# Clip
+<p align="center">
+  <img src="Clip/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="180" alt="Clip icon: an open book, headphones, and handwritten pages in blue ink">
+</p>
+
+<h1 align="center">Clip</h1>
+
+<p align="center"><em>easy highlights for audiobooks</em></p>
 
 Clip turns DRM-free audiobooks into highlightable books. It is made of two native SwiftUI apps:
 
@@ -74,4 +80,6 @@ The detailed product and `.clipbook` schema contract lives in [`clip-build-spec.
 
 Clip accepts DRM-free `.epub`, `.mp3`, `.m4a`, and `.m4b` files. Audible, Spotify, and other DRM-protected sources are intentionally unsupported. The Readwise token is stored in the iOS Keychain and sent only to Readwise's API. Treat it like a password and never commit it to this repository.
 
-No open-source license has been selected. The repository is public for inspection, but no additional reuse rights are granted.
+## License
+
+Clip is open source under the [MIT License](LICENSE).

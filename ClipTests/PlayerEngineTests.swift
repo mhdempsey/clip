@@ -104,6 +104,25 @@ final class PlayerEngineTests: XCTestCase {
         XCTAssertTrue(engine.playbackError?.contains("audio files are missing") == true)
     }
 
+    func testChapterTitlesComeFromPlaybackManifest() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let engine = PlayerEngine(database: fixture.database)
+
+        await engine.load(fixture.book)
+
+        XCTAssertEqual(engine.currentChapterTitle, "Opening")
+        XCTAssertEqual(engine.chapterTitle(at: 0), "Opening")
+        XCTAssertEqual(engine.chapterTitle(at: 1), "Second Chapter")
+        XCTAssertEqual(engine.chapterTitle(at: 2), "Chapter 3")
+
+        engine.seek(to: 1.25)
+        XCTAssertEqual(engine.currentChapterTitle, "Second Chapter")
+    }
+
     private func makeFixture(includeAudio: Bool) throws -> (
         root: URL,
         database: ClipDatabase,
@@ -118,7 +137,7 @@ final class PlayerEngineTests: XCTestCase {
         if includeAudio {
             try writeSilentAudio(to: audioDirectory.appendingPathComponent("part.caf"))
         }
-        let manifest = #"{"audio":[{"file":"audio/part.caf","offset_s":0,"duration_s":2}],"chapters":[{"title":"Test Chapter","start_s":0}]}"#
+        let manifest = #"{"audio":[{"file":"audio/part.caf","offset_s":0,"duration_s":2}],"chapters":[{"title":"Opening","start_s":0},{"title":"Second Chapter","start_s":1}]}"#
         try Data(manifest.utf8).write(to: bundle.appendingPathComponent("sync.json"))
 
         let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))

@@ -2,6 +2,8 @@ import ClipCore
 import SwiftUI
 
 struct PlayerView: View {
+    private static let bottomControlClearance: CGFloat = 112
+
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var player: PlayerEngine
     @EnvironmentObject private var settings: ClipSettings
@@ -60,17 +62,29 @@ struct PlayerView: View {
                     .disabled(clipping)
                     .accessibilityIdentifier("player.clip")
 
-                    HStack {
+                    VStack(alignment: .trailing, spacing: 8) {
                         Button {
                             showingReader = true
                         } label: {
-                            Label("Read along", systemImage: "text.book.closed")
-                                .font(ClipTypography.semibold(16))
-                                .foregroundStyle(ClipDesign.ink)
+                            HStack(spacing: 10) {
+                                Label("Read along", systemImage: "text.book.closed")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .font(ClipTypography.semibold(16))
+                            .foregroundStyle(ClipDesign.accent)
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(ClipDesign.paperStrong)
+                            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
+                                    .stroke(ClipDesign.hairlineStrong, lineWidth: ClipDesign.hairlineWidth)
+                            }
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("player.reader")
-                        Spacer()
                         if clipService.pendingCount > 0 {
                             Text("\(clipService.pendingCount) pending")
                                 .font(ClipTypography.italic(15))
@@ -80,7 +94,7 @@ struct PlayerView: View {
                     }
                 }
                 .padding(.horizontal, 28)
-                .padding(.bottom, 36)
+                .padding(.bottom, Self.bottomControlClearance)
             } else {
                 noBook
             }

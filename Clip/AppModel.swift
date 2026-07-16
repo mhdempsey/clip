@@ -26,6 +26,14 @@ final class AppModel: ObservableObject {
         settings = ClipSettings()
         importer.onImport = { [weak self] in self?.reloadBooks() }
         reloadBooks()
+#if DEBUG
+        if let fixture = try? ClipUITestFixture.installIfRequested(database: database) {
+            reloadBooks()
+            selectedTab = .player
+            let engine = self.player
+            playerLoadTask = Task { await engine.load(fixture, autoplay: false) }
+        }
+#endif
     }
 
     func reloadBooks() {

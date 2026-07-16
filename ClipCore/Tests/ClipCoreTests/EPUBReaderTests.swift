@@ -28,6 +28,46 @@ final class EPUBReaderTests: XCTestCase {
         XCTAssertEqual(XHTMLTextScanner.scan("<p>\(raw)</p>").text, sentence.text)
     }
 
+    func testReadsNCXLabelsAndFragmentChapterBoundaries() throws {
+        let document = #"<html><head><title>Index</title></head><body><a id="opening"></a><p>The first passage.</p><a id="second"></a><p>The second passage.</p></body></html>"#
+        let navigation = #"<?xml version="1.0"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap><navPoint id="one" playOrder="1"><navLabel><text>Opening</text></navLabel><content src="Text/index.xhtml#opening"/></navPoint><navPoint id="two" playOrder="2"><navLabel><text>Second Chapter</text></navLabel><content src="Text/index.xhtml#second"/></navPoint></navMap></ncx>"#
+        let manifest = #"<item id="content" href="Text/index.xhtml" media-type="application/xhtml+xml"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>"#
+        var entries = baseEntries(package: packageDocument(
+            manifest: manifest,
+            spine: #"<itemref idref="content"/>"#
+        ))
+        entries["OPS/Text/index.xhtml"] = Data(document.utf8)
+        entries["OPS/toc.ncx"] = Data(navigation.utf8)
+        let epub = try makeArchive(entries: entries)
+        defer { try? FileManager.default.removeItem(at: epub.deletingLastPathComponent()) }
+
+        let book = try EPUBReader.read(from: epub)
+
+        XCTAssertEqual(book.chapters.map(\.title), ["Opening", "Second Chapter"])
+        XCTAssertEqual(book.chapters.map(\.sentenceRange), [0..<1, 1..<2])
+        XCTAssertEqual(book.sentences.map(\.chapter), [0, 1])
+    }
+
+    func testReadsEPUB3NavigationLabelsAndNestedLinkText() throws {
+        let document = #"<html><head><title>Index</title></head><body><section id="first" data-id="second"><p>The first passage.</p></section><section id="second"><p>The second passage.</p></section></body></html>"#
+        let navigation = #"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="Text/index.xhtml#first"><span>Part One</span></a></li><li><a href="Text/index.xhtml#second">Part <em>Two</em></a></li></ol></nav></body></html>"#
+        let manifest = #"<item id="content" href="Text/index.xhtml" media-type="application/xhtml+xml"/><item id="navigation" href="nav.xhtml" media-type="application/xhtml+xml" properties="scripted&#9;nav"/>"#
+        var entries = baseEntries(package: packageDocument(
+            manifest: manifest,
+            spine: #"<itemref idref="content"/>"#
+        ))
+        entries["OPS/Text/index.xhtml"] = Data(document.utf8)
+        entries["OPS/nav.xhtml"] = Data(navigation.utf8)
+        let epub = try makeArchive(entries: entries)
+        defer { try? FileManager.default.removeItem(at: epub.deletingLastPathComponent()) }
+
+        let book = try EPUBReader.read(from: epub)
+
+        XCTAssertEqual(book.chapters.map(\.title), ["Part One", "Part Two"])
+        XCTAssertEqual(book.chapters.map(\.sentenceRange), [0..<1, 1..<2])
+        XCTAssertEqual(book.sentences.map(\.chapter), [0, 1])
+    }
+
     func testRejectsMissingContainerAndMissingSpineManifestItem() throws {
         let missingContainer = try makeArchive(entries: ["mimetype": Data("application/epub+zip".utf8)])
         defer { try? FileManager.default.removeItem(at: missingContainer.deletingLastPathComponent()) }

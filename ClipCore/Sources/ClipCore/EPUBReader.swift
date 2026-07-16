@@ -112,6 +112,11 @@ public enum EPUBReader {
         guard !packageDelegate.spine.isEmpty else { throw EPUBReaderError.invalidPackage }
 
         let baseURL = packageURL.deletingLastPathComponent()
+        let navigation = navigationEntries(
+            package: packageDelegate,
+            baseURL: baseURL,
+            extractionRoot: extractionURL
+        )
         var sentences: [EPUBSentence] = []
         var chapters: [EPUBChapter] = []
         var paragraphOrdinal = 0
@@ -131,9 +136,17 @@ public enum EPUBReader {
                 guard case let .heading(level) = block.kind, level <= 2 else { return nil }
                 return (index, block.text)
             }
-            let defaultTitle = majorHeadings.first?.1 ?? scan.documentTitle ?? documentURL.deletingPathExtension().lastPathComponent
+            let navigationBoundaries = chapterBoundaries(
+                from: navigation.filter { $0.documentPath == documentURL.standardizedFileURL.path },
+                in: xhtml,
+                blocks: scan.blocks
+            )
+            let defaultTitle = navigationBoundaries.first?.title ?? majorHeadings.first?.1 ?? scan.documentTitle ?? documentURL.deletingPathExtension().lastPathComponent
             var boundaries: [(block: Int, title: String)]
-            if majorHeadings.count > 1 {
+            if navigationBoundaries.count > 1 {
+                boundaries = navigationBoundaries
+                if let first = boundaries.first, first.block > 0 { boundaries[0].block = 0 }
+            } else if majorHeadings.count > 1 {
                 boundaries = majorHeadings
                 if let first = boundaries.first, first.block > 0 { boundaries[0].block = 0 }
             } else {
@@ -194,10 +207,73 @@ public enum EPUBReader {
     }
 
     private static func shouldSkip(_ item: PackageItem) -> Bool {
-        let properties = item.properties.lowercased()
         let name = URL(fileURLWithPath: item.href).deletingPathExtension().lastPathComponent.lowercased()
-        return properties.contains("nav") || properties.contains("cover-image") ||
+        return item.hasProperty("nav") || item.hasProperty("cover-image") ||
             name == "nav" || name == "toc" || name == "cover" || name.hasPrefix("toc_")
+    }
+
+    private static func navigationEntries(
+        package: PackageDelegate,
+        baseURL: URL,
+        extractionRoot: URL
+    ) -> [ResolvedNavigationEntry] {
+        guard let item = package.navigationItem,
+              let navigationURL = try? resolvedURL(for: item.href, relativeTo: baseURL, extractionRoot: extractionRoot)
+        else { return [] }
+
+        let rawEntries: [NavigationEntry]
+        if item.hasProperty("nav") || item.mediaType.lowercased().contains("xhtml") {
+            let delegate = EPUB3NavigationDelegate()
+            guard (try? parseXML(at: navigationURL, delegate: delegate)) != nil else { return [] }
+            rawEntries = delegate.entries
+        } else {
+            let delegate = NCXNavigationDelegate()
+            guard (try? parseXML(at: navigationURL, delegate: delegate)) != nil else { return [] }
+            rawEntries = delegate.entries.sorted { $0.order < $1.order }
+        }
+
+        return rawEntries.compactMap { entry in
+            guard let documentURL = try? resolvedURL(
+                for: entry.href,
+                relativeTo: navigationURL.deletingLastPathComponent(),
+                extractionRoot: extractionRoot
+            ) else { return nil }
+            let parts = entry.href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+            let fragment = parts.count == 2 ? String(parts[1]).removingPercentEncoding?.nonempty : nil
+            return ResolvedNavigationEntry(
+                title: entry.title,
+                documentPath: documentURL.standardizedFileURL.path,
+                fragment: fragment
+            )
+        }
+    }
+
+    private static func chapterBoundaries(
+        from entries: [ResolvedNavigationEntry],
+        in source: String,
+        blocks: [XHTMLBlock]
+    ) -> [(block: Int, title: String)] {
+        var seenBlocks: Set<Int> = []
+        return entries.compactMap { entry in
+            let block: Int
+            if let fragment = entry.fragment {
+                guard let located = blockIndex(for: fragment, in: source, blocks: blocks) else { return nil }
+                block = located
+            } else {
+                block = 0
+            }
+            guard seenBlocks.insert(block).inserted else { return nil }
+            return (block, entry.title)
+        }
+        .sorted { $0.block < $1.block }
+    }
+
+    private static func blockIndex(for fragment: String, in source: String, blocks: [XHTMLBlock]) -> Int? {
+        let escaped = NSRegularExpression.escapedPattern(for: fragment)
+        let pattern = #"\s(?:id|name)\s*=\s*[\"']"# + escaped + #"[\"']"#
+        guard let anchorRange = source.range(of: pattern, options: [.caseInsensitive, .regularExpression]) else { return nil }
+        let anchorOffset = source.distance(from: source.startIndex, to: anchorRange.lowerBound)
+        return blocks.firstIndex { $0.sourceRange.upperBound > anchorOffset }
     }
 
     private static func preflightArchive(at url: URL) throws {
@@ -275,6 +351,24 @@ enum EPUBArchivePreflight {
 private struct PackageItem: Sendable {
     var href: String
     var properties: String
+    var mediaType: String
+
+    func hasProperty(_ property: String) -> Bool {
+        let normalized = property.lowercased()
+        return properties.split(whereSeparator: \.isWhitespace).contains { $0.lowercased() == normalized }
+    }
+}
+
+private struct NavigationEntry: Sendable {
+    var title: String
+    var href: String
+    var order: Int
+}
+
+private struct ResolvedNavigationEntry: Sendable {
+    var title: String
+    var documentPath: String
+    var fragment: String?
 }
 
 private final class ContainerDelegate: NSObject, XMLParserDelegate {
@@ -291,11 +385,18 @@ private final class PackageDelegate: NSObject, XMLParserDelegate {
     var title: String?
     var author: String?
     var coverID: String?
+    var spineTOCID: String?
     private var capturing: String?
     private var buffer = ""
 
     var coverItem: PackageItem? {
-        manifest.values.first(where: { $0.properties.lowercased().contains("cover-image") }) ?? coverID.flatMap { manifest[$0] }
+        manifest.values.first(where: { $0.hasProperty("cover-image") }) ?? coverID.flatMap { manifest[$0] }
+    }
+
+    var navigationItem: PackageItem? {
+        manifest.values.first(where: { $0.hasProperty("nav") })
+            ?? spineTOCID.flatMap { manifest[$0] }
+            ?? manifest.values.first(where: { $0.mediaType.lowercased().contains("dtbncx") })
     }
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
@@ -304,8 +405,13 @@ private final class PackageDelegate: NSObject, XMLParserDelegate {
         case "title", "creator": capturing = name; buffer = ""
         case "item":
             if let id = attributeDict["id"], let href = attributeDict["href"] {
-                manifest[id] = PackageItem(href: href, properties: attributeDict["properties"] ?? "")
+                manifest[id] = PackageItem(
+                    href: href,
+                    properties: attributeDict["properties"] ?? "",
+                    mediaType: attributeDict["media-type"] ?? ""
+                )
             }
+        case "spine": spineTOCID = attributeDict["toc"]
         case "itemref": if let idref = attributeDict["idref"] { spine.append(idref) }
         case "meta": if attributeDict["name"]?.lowercased() == "cover" { coverID = attributeDict["content"] }
         default: break
@@ -326,8 +432,103 @@ private final class PackageDelegate: NSObject, XMLParserDelegate {
     }
 }
 
+private final class NCXNavigationDelegate: NSObject, XMLParserDelegate {
+    private struct PendingEntry {
+        var order: Int
+        var title = ""
+        var href = ""
+        var labelBuffer = ""
+        var isCapturingLabel = false
+    }
+
+    private var stack: [PendingEntry] = []
+    private var nextOrder = 0
+    var entries: [NavigationEntry] = []
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+        switch localName(elementName) {
+        case "navpoint":
+            stack.append(PendingEntry(order: nextOrder))
+            nextOrder += 1
+        case "navlabel":
+            guard !stack.isEmpty else { return }
+            stack[stack.count - 1].labelBuffer = ""
+            stack[stack.count - 1].isCapturingLabel = true
+        case "content":
+            guard !stack.isEmpty else { return }
+            stack[stack.count - 1].href = attributeDict["src"] ?? ""
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard !stack.isEmpty, stack[stack.count - 1].isCapturingLabel else { return }
+        stack[stack.count - 1].labelBuffer += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        switch localName(elementName) {
+        case "navlabel":
+            guard !stack.isEmpty else { return }
+            stack[stack.count - 1].title = cleanedNavigationTitle(stack[stack.count - 1].labelBuffer)
+            stack[stack.count - 1].isCapturingLabel = false
+        case "navpoint":
+            guard let pending = stack.popLast(), !pending.title.isEmpty, !pending.href.isEmpty else { return }
+            entries.append(NavigationEntry(title: pending.title, href: pending.href, order: pending.order))
+        default:
+            break
+        }
+    }
+}
+
+private final class EPUB3NavigationDelegate: NSObject, XMLParserDelegate {
+    private var depth = 0
+    private var tableOfContentsDepth: Int?
+    private var activeLink: (href: String, text: String)?
+    private var nextOrder = 0
+    var entries: [NavigationEntry] = []
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+        depth += 1
+        let name = localName(elementName)
+        if name == "nav", tableOfContentsDepth == nil {
+            let type = attributeDict.first(where: { localName($0.key) == "type" })?.value.lowercased() ?? ""
+            if type.split(whereSeparator: { $0.isWhitespace }).contains("toc") {
+                tableOfContentsDepth = depth
+            }
+        } else if name == "a", tableOfContentsDepth != nil, let href = attributeDict["href"] {
+            activeLink = (href, "")
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard var link = activeLink else { return }
+        link.text += string
+        activeLink = link
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        let name = localName(elementName)
+        if name == "a", let link = activeLink {
+            let title = cleanedNavigationTitle(link.text)
+            if !title.isEmpty {
+                entries.append(NavigationEntry(title: title, href: link.href, order: nextOrder))
+                nextOrder += 1
+            }
+            activeLink = nil
+        }
+        if name == "nav", tableOfContentsDepth == depth { tableOfContentsDepth = nil }
+        depth -= 1
+    }
+}
+
 private func localName(_ name: String) -> String {
     name.split(separator: ":").last.map(String.init)?.lowercased() ?? name.lowercased()
+}
+
+private func cleanedNavigationTitle(_ title: String) -> String {
+    title.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
 }
 
 private extension String {

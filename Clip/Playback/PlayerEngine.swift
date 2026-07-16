@@ -17,6 +17,14 @@ final class PlayerEngine: ObservableObject {
         manifest?.chapters.last(where: { $0.startS <= globalTime })?.title ?? ""
     }
 
+    func chapterTitle(at index: Int) -> String {
+        guard let chapters = manifest?.chapters, chapters.indices.contains(index) else {
+            return "Chapter \(index + 1)"
+        }
+        let title = chapters[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Chapter \(index + 1)" : title
+    }
+
     private let database: ClipDatabase
     private let defaults: UserDefaults
     private let player: AVQueuePlayer

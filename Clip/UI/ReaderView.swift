@@ -100,7 +100,7 @@ struct ReaderView: View {
             Text("❦")
                 .font(ClipTypography.title(24))
                 .foregroundStyle(ClipDesign.inkSecondary)
-            SmallCapsLabel(text: "Chapter \(chapter + 1)")
+            SmallCapsLabel(text: player.chapterTitle(at: chapter))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 28)

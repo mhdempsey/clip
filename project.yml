@@ -182,6 +182,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.tests
 
+  ClipUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ClipUITests
+    dependencies:
+      - target: Clip
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.ui-tests
+
   ClipWidgets:
     type: app-extension
     platform: iOS
@@ -230,6 +242,8 @@ schemes:
       config: Debug
       targets:
         - name: ClipTests
+          parallelizable: false
+        - name: ClipUITests
           parallelizable: false
     archive:
       config: Release

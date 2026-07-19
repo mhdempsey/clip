@@ -17,12 +17,16 @@ final class PlayerLayoutUITests: XCTestCase {
 
         XCTAssertTrue(readAlong.exists)
         XCTAssertTrue(readAlong.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["player.clip-payoff"].exists)
         keepScreenshot(of: app, named: "Player bottom on iPhone 13 Pro")
         readAlong.tap()
 
         let reader = app.descendants(matching: .any)["reader.screen"]
         XCTAssertTrue(reader.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["OPENING"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["reader.play-pause"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["reader.clip"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["reader.display"].isHittable)
         keepScreenshot(of: app, named: "Reader with chapter title")
     }
 

@@ -51,7 +51,7 @@ struct PlayerView: View {
                     )
 
                     DurationStampPicker(selection: $settings.clipWindowSeconds)
-                    ClipPrimaryButton(title: "Clip \(settings.clipWindowSeconds)s", systemImage: "scissors") {
+                    ClipPrimaryButton(title: "Clip last \(settings.clipWindowSeconds)s", systemImage: "scissors") {
                         guard !clipping else { return }
                         clipping = true
                         Task {
@@ -61,18 +61,29 @@ struct PlayerView: View {
                     }
                     .disabled(clipping)
                     .accessibilityIdentifier("player.clip")
+                    Text("Or say “Clip that.” Sends the matched passage to Readwise, ready for Marginalia.")
+                        .font(ClipTypography.italic(15))
+                        .foregroundStyle(ClipDesign.inkSecondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("player.clip-payoff")
 
                     VStack(alignment: .trailing, spacing: 8) {
                         Button {
                             showingReader = true
                         } label: {
                             HStack(spacing: 10) {
-                                Label("Read along", systemImage: "text.book.closed")
+                                Image(systemName: "text.book.closed")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Read & listen")
+                                        .font(ClipTypography.semibold(16))
+                                    Text("Follow the ebook as the audiobook plays")
+                                        .font(ClipTypography.italic(14))
+                                        .foregroundStyle(ClipDesign.inkSecondary)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
                             }
-                            .font(ClipTypography.semibold(16))
                             .foregroundStyle(ClipDesign.accent)
                             .padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: 52)
@@ -109,7 +120,7 @@ struct PlayerView: View {
                     .foregroundStyle(ClipDesign.ink)
             }
         }
-        .sheet(isPresented: $showingReader) {
+        .fullScreenCover(isPresented: $showingReader) {
             if let book = player.currentBook {
                 NavigationStack { ReaderView(book: book) }
             }

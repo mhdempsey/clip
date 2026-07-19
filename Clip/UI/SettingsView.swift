@@ -130,6 +130,8 @@ struct SettingsView: View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Say “Clip that,” “Bookmark that,” “Highlight that,” or “Underline that.”")
+                Text("Clip matches what you just heard to the ebook, sends the passage to Readwise, and makes it ready for Marginalia.")
+                    .foregroundStyle(ClipDesign.inkSecondary)
                 Text("If Siri doesn’t recognize one, make a personal Shortcut with that exact phrase and add the Clip action.")
                     .foregroundStyle(ClipDesign.inkSecondary)
             }

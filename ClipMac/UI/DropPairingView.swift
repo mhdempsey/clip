@@ -22,13 +22,26 @@ struct DropPairingView: View {
     }
 
     private var dropZone: some View {
-        VStack(spacing: 13) {
+        VStack(spacing: 12) {
             Fleuron()
+            Text("Drop an ebook and its matching audiobook.")
+                .font(ClipFont.medium(25))
+                .foregroundStyle(ClipDesign.ink)
+                .multilineTextAlignment(.center)
+            Text("Clip syncs them for listening and reading on your iPhone. Then say “Clip that” or tap Clip to send the passage to Readwise, ready for Marginalia.")
+                .font(ClipFont.regular(17))
+                .foregroundStyle(ClipDesign.inkSecondary)
+                .multilineTextAlignment(.center)
             SmallCapsLabel(text: draft.pairStatus, color: isDropTargeted ? ClipDesign.terracotta : ClipDesign.ink)
                 .multilineTextAlignment(.center)
+                .padding(.top, 4)
             Button("Choose files…") { model.chooseFiles() }
                 .buttonStyle(PaperButtonStyle(role: .secondary))
                 .accessibilityIdentifier("choose-files")
+            Text("EPUB + MP3, M4A, or M4B")
+                .font(ClipFont.handwritten(15))
+                .foregroundStyle(ClipDesign.bloom)
+                .rotationEffect(.degrees(-1))
             if let message = draft.inlineMessage {
                 Text(message)
                     .font(ClipFont.italic(15))
@@ -37,7 +50,7 @@ struct DropPairingView: View {
                     .accessibilityIdentifier("pairing-feedback")
             }
         }
-        .frame(maxWidth: .infinity, minHeight: draft.canAlign ? 130 : 210)
+        .frame(maxWidth: .infinity, minHeight: draft.canAlign ? 180 : 270)
         .padding(24)
         .background(ClipDesign.surface)
         .clipShape(RoundedRectangle(cornerRadius: ClipDesign.cardRadius))
@@ -174,4 +187,3 @@ struct DropPairingView: View {
         .accessibilityElement(children: .combine)
     }
 }
-

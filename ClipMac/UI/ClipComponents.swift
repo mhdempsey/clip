@@ -4,10 +4,51 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum ClipFont {
-    static func regular(_ size: CGFloat) -> Font { .custom("EB Garamond", size: size) }
-    static func medium(_ size: CGFloat) -> Font { .custom("EB Garamond Medium", size: size) }
-    static func semibold(_ size: CGFloat) -> Font { .custom("EB Garamond SemiBold", size: size) }
-    static func italic(_ size: CGFloat) -> Font { .custom("EB Garamond", size: size).italic() }
+    static func regular(_ size: CGFloat) -> Font { .custom("EBGaramond-Regular", size: size) }
+    static func medium(_ size: CGFloat) -> Font { .custom("EBGaramond-Medium", size: size) }
+    static func semibold(_ size: CGFloat) -> Font { .custom("EBGaramond-SemiBold", size: size) }
+    static func italic(_ size: CGFloat) -> Font { .custom("EBGaramond-Italic", size: size) }
+    static func handwritten(_ size: CGFloat) -> Font { .custom("Bradley Hand", size: size) }
+}
+
+struct ClipWordmark: View {
+    var size: CGFloat = 42
+
+    var body: some View {
+        Text("Clip")
+            .font(ClipFont.handwritten(size))
+            .foregroundStyle(ClipDesign.accent)
+            .rotationEffect(.degrees(-1.5))
+            .overlay(alignment: .bottom) {
+                ScribbleUnderline()
+                    .stroke(
+                        ClipDesign.bloom,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(height: 6)
+                    .offset(y: 3)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct ScribbleUnderline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + 2, y: rect.midY + 1))
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.midY - 1),
+            control1: CGPoint(x: rect.width * 0.18, y: rect.minY),
+            control2: CGPoint(x: rect.width * 0.34, y: rect.maxY)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX - 1, y: rect.midY),
+            control1: CGPoint(x: rect.width * 0.66, y: rect.minY),
+            control2: CGPoint(x: rect.width * 0.84, y: rect.maxY)
+        )
+        return path
+    }
 }
 
 struct SmallCapsLabel: View {

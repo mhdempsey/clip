@@ -79,10 +79,10 @@ final class PairingDraft: ObservableObject {
 
     var pairStatus: String {
         switch (epubURL != nil, audio.isEmpty) {
-        case (false, true): "Drop a book and its audiobook."
-        case (true, true): "Got the book — now the audio."
-        case (false, false): "Got the audio — now the book."
-        case (true, false): "A good pair. Check the order, then align."
+        case (false, true): "Step 1 of 4 · Add both files"
+        case (true, true): "Ebook added · Now add the audiobook"
+        case (false, false): "Audiobook added · Now add the ebook"
+        case (true, false): "Step 2 of 4 · Check the order, then click Align"
         }
     }
 

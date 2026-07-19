@@ -64,10 +64,18 @@ struct QualitySettingsView: View {
                 .font(ClipFont.italic(14))
                 .foregroundStyle(ClipDesign.inkSecondary)
 
+            HStack(spacing: 18) {
+                Link("Clip Support", destination: ClipShared.supportURL)
+                    .accessibilityIdentifier("settings.support")
+                Link("Privacy Policy", destination: ClipShared.privacyPolicyURL)
+                    .accessibilityIdentifier("settings.privacy-policy")
+            }
+            .font(ClipFont.semibold(14))
+
             Spacer()
         }
         .padding(28)
-        .frame(width: 490, height: 410)
+        .frame(width: 490, height: 440)
         .background(ClipDesign.paper)
         .tint(ClipDesign.ink)
     }

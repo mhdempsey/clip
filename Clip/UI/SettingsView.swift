@@ -143,13 +143,35 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
+            Link(destination: ClipShared.supportURL) {
+                settingsLinkLabel("Clip Support")
+            }
+            .accessibilityIdentifier("settings.support")
+
+            Link(destination: ClipShared.privacyPolicyURL) {
+                settingsLinkLabel("Privacy Policy")
+            }
+            .accessibilityIdentifier("settings.privacy-policy")
+
             HStack {
                 Text("Version")
                 Spacer()
                 Text(version).font(ClipTypography.time(14)).foregroundStyle(ClipDesign.inkSecondary)
             }
+        } header: {
+            SmallCapsLabel(text: "About")
         }
         .listRowBackground(ClipDesign.surface)
+    }
+
+    private func settingsLinkLabel(_ title: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.caption)
+                .foregroundStyle(ClipDesign.inkSecondary)
+        }
     }
 
     private var version: String {

@@ -20,10 +20,10 @@ enum ClipUITestFixture {
 
         let book = BookRecord(
             id: "clip-ui-test-player",
-            title: "A Long Book Title for Layout Testing",
-            author: "Synthetic Fixture",
+            title: "The Sentence Worth Keeping",
+            author: "Clip Review Fixture",
             bundleURL: root.path,
-            durationS: 2,
+            durationS: 23,
             coverPath: nil,
             positionS: 0,
             addedAt: Date(),

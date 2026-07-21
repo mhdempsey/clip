@@ -28,6 +28,9 @@ Books in Clip's iCloud Drive folder appear in the Library automatically. You can
 
 Clip finds the aligned sentences spoken during that window and sends the passage to Readwise with the title, author, reading order, and audio timestamp. If the network is unavailable, it keeps the highlight in **Settings → Pending clips** for retry.
 
+## Getting Books
+Assuming you want to do this legally as you should, many like to use [Libro](https://libro.fm/) to buy DRM-free audiobooks and [eBooks](https://www.ebooks.com/) for DRM-free ebooks.
+
 ## Readwise and Marginalia
 
 Readwise is the bridge between Clip and [Marginalia](https://ourmarginalia.com/):

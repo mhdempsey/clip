@@ -205,6 +205,7 @@ enum MacAppError: LocalizedError {
     case missingPair
     case unreadableAudio(String)
     case noTranscript(String)
+    case incompleteBookText(Double)
     case malformedBundle
 
     var errorDescription: String? {
@@ -217,6 +218,8 @@ enum MacAppError: LocalizedError {
             "Clip couldn’t read the duration of \(name)."
         case let .noTranscript(name):
             "Clip couldn’t hear any spoken words in \(name)."
+        case let .incompleteBookText(coverage):
+            "Clip found reliable ebook text for only \(Int((coverage * 100).rounded()))% of the audio. The EPUB may be incomplete or damaged; try another copy."
         case .malformedBundle:
             "This Clip book is missing some of its information."
         }

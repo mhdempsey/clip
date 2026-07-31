@@ -83,6 +83,23 @@ final class EPUBReaderTests: XCTestCase {
         }
     }
 
+    func testRejectsTextContainingAnEmbeddedExecutablePayload() throws {
+        let document = #"<html><body><p>This program cannot be run in DOS mode. KERNEL32.dll .rsrc .reloc</p><p>This program cannot be run in DOS mode. BATMETER.DLL RSDS helper.pdb</p></body></html>"#
+        var entries = baseEntries(package: packageDocument(
+            manifest: #"<item id="content" href="Text/index.xhtml" media-type="application/xhtml+xml"/>"#,
+            spine: #"<itemref idref="content"/>"#
+        ))
+        entries["OPS/Text/index.xhtml"] = Data(document.utf8)
+        let epub = try makeArchive(entries: entries)
+        defer { try? FileManager.default.removeItem(at: epub.deletingLastPathComponent()) }
+
+        XCTAssertThrowsError(try EPUBReader.read(from: epub)) { error in
+            guard case EPUBReaderError.embeddedBinaryContent("Text/index.xhtml") = error else {
+                return XCTFail("Expected embeddedBinaryContent, got \(error)")
+            }
+        }
+    }
+
     func testRejectsManifestPathOutsideExtractionRoot() throws {
         let package = packageDocument(
             manifest: #"<item id="escape" href="../../../outside.xhtml" media-type="application/xhtml+xml"/>"#,

@@ -2,11 +2,25 @@ import Foundation
 
 public struct MatchResult: Equatable, Sendable {
     public var sentences: [SyncSentence]
+    public var sentenceCoverage: Double
+    public var audioCoverage: Double
     public var coverage: Double
+    public var sourceAppearsIncomplete: Bool {
+        sentenceCoverage >= 0.9 && audioCoverage < 0.75
+    }
 
     public init(sentences: [SyncSentence], coverage: Double) {
         self.sentences = sentences
+        self.sentenceCoverage = coverage
+        self.audioCoverage = coverage
         self.coverage = coverage
+    }
+
+    public init(sentences: [SyncSentence], sentenceCoverage: Double, audioCoverage: Double) {
+        self.sentences = sentences
+        self.sentenceCoverage = sentenceCoverage
+        self.audioCoverage = audioCoverage
+        self.coverage = min(sentenceCoverage, audioCoverage)
     }
 }
 
@@ -27,6 +41,8 @@ public enum Matcher {
         var length: Int
     }
 
+    private static let minimumSentenceConfidence = 0.5
+
     public static func normalize(_ token: String) -> [String] {
         let folded = token
             .decomposedStringWithCompatibilityMapping
@@ -41,7 +57,7 @@ public enum Matcher {
     }
 
     public static func align(sentences: [EPUBSentence], transcript: [TranscriptWord]) -> MatchResult {
-        guard !sentences.isEmpty else { return MatchResult(sentences: [], coverage: 1) }
+        guard !sentences.isEmpty else { return MatchResult(sentences: [], coverage: 0) }
         guard !transcript.isEmpty else {
             return MatchResult(sentences: sentences.map(untimedSentence), coverage: 0)
         }
@@ -112,6 +128,14 @@ public enum Matcher {
                 )
             }
             let denominator = max(1, sentenceTokenCounts[offset])
+            let confidence = min(1, Double(matchedTokensBySentence[offset]) / Double(denominator))
+            let duration = chronologicalTranscript[last].e - chronologicalTranscript[first].s
+            let maximumPlausibleDuration = max(15, Double(denominator) * 2)
+            guard confidence >= minimumSentenceConfidence,
+                  duration <= maximumPlausibleDuration else {
+                result.append(untimedSentence(source))
+                continue
+            }
             result.append(SyncSentence(
                 i: source.i,
                 startS: chronologicalTranscript[first].s,
@@ -120,7 +144,7 @@ public enum Matcher {
                 chapter: source.chapter,
                 p: source.p,
                 epub: source.epub,
-                conf: min(1, Double(matchedTokensBySentence[offset]) / Double(denominator)),
+                conf: confidence,
                 words: words
             ))
         }
@@ -128,7 +152,36 @@ public enum Matcher {
         interpolateIsolatedSentences(&result)
         enforceNonOverlap(&result)
         let timedCount = result.lazy.filter(\.isTimed).count
-        return MatchResult(sentences: result, coverage: Double(timedCount) / Double(result.count))
+        let sentenceCoverage = Double(timedCount) / Double(result.count)
+        let audioCoverage = matchedAudioCoverage(
+            sentences: result,
+            transcriptStart: chronologicalTranscript.first?.s,
+            transcriptEnd: chronologicalTranscript.last?.e
+        )
+        return MatchResult(
+            sentences: result,
+            sentenceCoverage: sentenceCoverage,
+            audioCoverage: audioCoverage
+        )
+    }
+
+    private static func matchedAudioCoverage(
+        sentences: [SyncSentence],
+        transcriptStart: Double?,
+        transcriptEnd: Double?
+    ) -> Double {
+        guard let transcriptStart, let transcriptEnd, transcriptEnd > transcriptStart else { return 0 }
+        let timed = sentences.filter(\.isTimed)
+        guard !timed.isEmpty else { return 0 }
+
+        // Ignore the outermost one percent for full books so a stray match at
+        // either edge cannot disguise an otherwise truncated source.
+        let trim = timed.count >= 100 ? max(1, timed.count / 100) : 0
+        guard let first = timed[trim].startS,
+              let last = timed[timed.count - trim - 1].endS else { return 0 }
+        let observedFraction = max(0, last - first) / (transcriptEnd - transcriptStart)
+        let retainedFraction = timed.count >= 100 ? 1 - (2 * Double(trim) / Double(timed.count)) : 1
+        return min(1, observedFraction / retainedFraction)
     }
 
     private static func alignRange(

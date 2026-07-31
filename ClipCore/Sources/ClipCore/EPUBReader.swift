@@ -65,6 +65,7 @@ public enum EPUBReaderError: Error, LocalizedError, Sendable {
     case invalidPackage
     case missingSpineItem(String)
     case unreadableDocument(String)
+    case embeddedBinaryContent(String)
     case unsafePath(String)
     case archiveTooManyEntries
     case archiveTooLarge
@@ -80,6 +81,7 @@ public enum EPUBReaderError: Error, LocalizedError, Sendable {
         case .invalidPackage: "The EPUB package document is invalid."
         case let .missingSpineItem(id): "The EPUB spine references missing item \(id)."
         case let .unreadableDocument(href): "The EPUB document \(href) could not be read."
+        case let .embeddedBinaryContent(href): "The EPUB contains damaged text in \(href). Try another copy of the ebook."
         case let .unsafePath(path): "The EPUB contains an unsafe path: \(path)."
         case .archiveTooManyEntries: "The EPUB contains too many files."
         case .archiveTooLarge: "The EPUB expands beyond the supported size."
@@ -130,6 +132,9 @@ public enum EPUBReader {
                 throw EPUBReaderError.unreadableDocument(item.href)
             }
             let scan = XHTMLTextScanner.scan(xhtml)
+            guard !containsEmbeddedExecutable(in: scan.text) else {
+                throw EPUBReaderError.embeddedBinaryContent(item.href)
+            }
             guard !scan.blocks.isEmpty else { continue }
 
             let majorHeadings = scan.blocks.enumerated().compactMap { index, block -> (Int, String)? in
@@ -210,6 +215,16 @@ public enum EPUBReader {
         let name = URL(fileURLWithPath: item.href).deletingPathExtension().lastPathComponent.lowercased()
         return item.hasProperty("nav") || item.hasProperty("cover-image") ||
             name == "nav" || name == "toc" || name == "cover" || name.hasPrefix("toc_")
+    }
+
+    private static func containsEmbeddedExecutable(in text: String) -> Bool {
+        let normalized = text.lowercased()
+        let dosStub = "this program cannot be run in dos mode"
+        let stubCount = normalized.components(separatedBy: dosStub).count - 1
+        guard stubCount >= 2 else { return false }
+
+        let executableMarkers = [".dll", ".pdb", ".rsrc", ".reloc", "kernel32"]
+        return executableMarkers.lazy.filter { normalized.contains($0) }.prefix(2).count == 2
     }
 
     private static func navigationEntries(

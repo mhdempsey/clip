@@ -88,6 +88,47 @@ final class MatcherTests: XCTestCase {
         assertValidTimings(result.sentences)
     }
 
+    func testRejectsLowConfidenceAccidentalSentenceMatch() {
+        let sentence = epubSentence(0, "alpha bravo charlie delta echo foxtrot golf hotel", paragraph: 0)
+        let transcript = timedWords("alpha delta hotel", step: 0.5)
+
+        let result = Matcher.align(sentences: [sentence], transcript: transcript)
+
+        XCTAssertFalse(result.sentences[0].isTimed)
+        XCTAssertEqual(result.sentences[0].conf, 0)
+        XCTAssertEqual(result.sentenceCoverage, 0)
+    }
+
+    func testRejectsImplausiblyLongMatchAndDetectsTruncatedSource() {
+        let cleanSentences = makeSentences(count: 20)
+        let corrupt = epubSentence(
+            20,
+            "This program cannot be run in DOS mode with embedded executable resources.",
+            paragraph: 20
+        )
+        var transcript: [TranscriptWord] = []
+        var clock = 0.0
+        for sentence in cleanSentences {
+            for word in words(sentence.text) {
+                transcript.append(TranscriptWord(w: word, s: clock, e: clock + 0.2))
+                clock += 0.25
+            }
+        }
+        for (index, word) in words(corrupt.text).enumerated() {
+            let start = 3_600 + Double(index) * 600
+            transcript.append(TranscriptWord(w: word, s: start, e: start + 0.2))
+        }
+
+        let result = Matcher.align(sentences: cleanSentences + [corrupt], transcript: transcript)
+
+        XCTAssertTrue(result.sentences[0..<20].allSatisfy(\.isTimed))
+        XCTAssertFalse(result.sentences[20].isTimed)
+        XCTAssertEqual(result.sentenceCoverage, 20.0 / 21.0, accuracy: 0.0001)
+        XCTAssertLessThan(result.audioCoverage, 0.1)
+        XCTAssertEqual(result.coverage, result.audioCoverage, accuracy: 0.0001)
+        XCTAssertTrue(result.sourceAppearsIncomplete)
+    }
+
     private func makeSentences(count: Int) -> [EPUBSentence] {
         let vocabulary = ["albatross", "lantern", "harbor", "compass", "whaleboat", "horizon", "starboard", "weather", "current", "island", "captain", "sailor"]
         return (0..<count).map { i in

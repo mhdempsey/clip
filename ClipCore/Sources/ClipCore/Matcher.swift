@@ -386,10 +386,12 @@ public enum Matcher {
                   sentences[index + 1].chapter == sentences[index].chapter,
                   let left = sentences[index - 1].endS,
                   let right = sentences[index + 1].startS,
-                  right >= left, right - left <= 30
+                  right >= left
             else { continue }
             let raw = rawWords(sentences[index].text)
             guard !raw.isEmpty else { continue }
+            let maximumPlausibleDuration = min(30, max(15, Double(raw.count) * 2))
+            guard right - left <= maximumPlausibleDuration else { continue }
             let step = (right - left) / Double(raw.count)
             sentences[index].startS = left
             sentences[index].endS = right

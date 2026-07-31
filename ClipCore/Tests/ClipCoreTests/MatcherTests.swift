@@ -56,6 +56,22 @@ final class MatcherTests: XCTestCase {
         assertValidTimings(result.sentences)
     }
 
+    func testDoesNotInterpolateShortSentenceAcrossImplausiblyLongGap() {
+        let sentences = [
+            epubSentence(0, "Alpha bravo charlie delta echo foxtrot.", paragraph: 0),
+            epubSentence(1, "A tiny missing aside.", paragraph: 1),
+            epubSentence(2, "Golf hotel india juliet kilo lima.", paragraph: 2),
+        ]
+        let leading = timedWords("Alpha bravo charlie delta echo foxtrot", step: 0.5)
+        let trailing = timedWords("Golf hotel india juliet kilo lima", step: 0.5).map {
+            TranscriptWord(w: $0.w, s: $0.s + 25, e: $0.e + 25)
+        }
+
+        let result = Matcher.align(sentences: sentences, transcript: leading + trailing)
+
+        XCTAssertFalse(result.sentences[1].isTimed)
+    }
+
     func testEmptyTranscriptLeavesEverySentenceUntimed() {
         let result = Matcher.align(
             sentences: [epubSentence(0, "Call me Ishmael.", paragraph: 0)],

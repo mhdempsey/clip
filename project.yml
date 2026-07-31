@@ -12,7 +12,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
-    CURRENT_PROJECT_VERSION: 8
+    CURRENT_PROJECT_VERSION: 12
     MARKETING_VERSION: 1.0
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ZV897Q6SZF
@@ -64,7 +64,8 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Clip for Mac
-        LSApplicationCategoryType: public.app-category.utilities
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.books
         NSHumanReadableCopyright: "Copyright © 2026 Michael Dempsey"
         NSUbiquitousContainers:
           iCloud.com.michael.clip:
@@ -114,6 +115,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Clip
+        ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.books
         UILaunchScreen:
           UIColorName: LaunchBackground
@@ -182,6 +184,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.tests
 
+  ClipUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ClipUITests
+    dependencies:
+      - target: Clip
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.ui-tests
+
   ClipWidgets:
     type: app-extension
     platform: iOS
@@ -230,6 +244,8 @@ schemes:
       config: Debug
       targets:
         - name: ClipTests
+          parallelizable: false
+        - name: ClipUITests
           parallelizable: false
     archive:
       config: Release

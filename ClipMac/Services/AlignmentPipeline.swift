@@ -57,6 +57,9 @@ enum AlignmentPipeline {
             TranscriptWord(w: $0.text, s: $0.start, e: $0.end)
         }
         let match = Matcher.align(sentences: epub.sentences, transcript: transcript)
+        guard !match.sourceAppearsIncomplete else {
+            throw MacAppError.incompleteBookText(match.audioCoverage)
+        }
 
         var offset: TimeInterval = 0
         let syncAudio = zip(source.audio, durations).map { audio, duration -> SyncAudio in
@@ -113,7 +116,7 @@ enum AlignmentPipeline {
             .map { UnmatchedSpanSummary(start: $0.startS, end: $0.endS) }
         return CompletedAlignment(
             bundleURL: result.bundleURL,
-            coverage: result.report.sentenceCoverage,
+            coverage: match.coverage,
             unmatchedSpans: unmatched,
             usedICloud: destination.usesICloud
         )

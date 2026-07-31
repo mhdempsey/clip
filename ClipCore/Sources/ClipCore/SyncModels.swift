@@ -64,7 +64,11 @@ public struct ClipBookSync: Codable, Equatable, Sendable {
                     throw SyncValidationError.invalidUntimedSentence(index: sentence.i)
                 }
             case let (.some(start), .some(end), .some(words)):
+                let sourceWordCount = max(1, sentence.text.split(whereSeparator: { $0.isWhitespace }).count)
+                let maximumPlausibleDuration = max(15, Double(sourceWordCount) * 2)
                 guard start.isFinite, end.isFinite, start >= 0, end >= start,
+                      end <= book.durationS + 0.25,
+                      end - start <= maximumPlausibleDuration,
                       !words.isEmpty, sentence.conf >= 0
                 else { throw SyncValidationError.invalidTimedSentence(index: sentence.i) }
                 guard start >= previousTimedStart else {
@@ -75,7 +79,8 @@ public struct ClipBookSync: Codable, Equatable, Sendable {
                 }
                 for word in words {
                     guard !word.w.isEmpty, word.s.isFinite, word.e.isFinite,
-                          word.s >= 0, word.e >= word.s
+                          word.s >= 0, word.e >= word.s,
+                          word.s + 0.25 >= start, word.e <= end + 0.25
                     else { throw SyncValidationError.invalidWord(sentence: sentence.i) }
                 }
                 previousTimedStart = start

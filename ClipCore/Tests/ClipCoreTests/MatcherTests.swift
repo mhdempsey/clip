@@ -56,6 +56,22 @@ final class MatcherTests: XCTestCase {
         assertValidTimings(result.sentences)
     }
 
+    func testDoesNotInterpolateShortSentenceAcrossImplausiblyLongGap() {
+        let sentences = [
+            epubSentence(0, "Alpha bravo charlie delta echo foxtrot.", paragraph: 0),
+            epubSentence(1, "A tiny missing aside.", paragraph: 1),
+            epubSentence(2, "Golf hotel india juliet kilo lima.", paragraph: 2),
+        ]
+        let leading = timedWords("Alpha bravo charlie delta echo foxtrot", step: 0.5)
+        let trailing = timedWords("Golf hotel india juliet kilo lima", step: 0.5).map {
+            TranscriptWord(w: $0.w, s: $0.s + 25, e: $0.e + 25)
+        }
+
+        let result = Matcher.align(sentences: sentences, transcript: leading + trailing)
+
+        XCTAssertFalse(result.sentences[1].isTimed)
+    }
+
     func testEmptyTranscriptLeavesEverySentenceUntimed() {
         let result = Matcher.align(
             sentences: [epubSentence(0, "Call me Ishmael.", paragraph: 0)],
@@ -86,6 +102,47 @@ final class MatcherTests: XCTestCase {
         let result = Matcher.align(sentences: sentences, transcript: transcript)
 
         assertValidTimings(result.sentences)
+    }
+
+    func testRejectsLowConfidenceAccidentalSentenceMatch() {
+        let sentence = epubSentence(0, "alpha bravo charlie delta echo foxtrot golf hotel", paragraph: 0)
+        let transcript = timedWords("alpha delta hotel", step: 0.5)
+
+        let result = Matcher.align(sentences: [sentence], transcript: transcript)
+
+        XCTAssertFalse(result.sentences[0].isTimed)
+        XCTAssertEqual(result.sentences[0].conf, 0)
+        XCTAssertEqual(result.sentenceCoverage, 0)
+    }
+
+    func testRejectsImplausiblyLongMatchAndDetectsTruncatedSource() {
+        let cleanSentences = makeSentences(count: 20)
+        let corrupt = epubSentence(
+            20,
+            "This program cannot be run in DOS mode with embedded executable resources.",
+            paragraph: 20
+        )
+        var transcript: [TranscriptWord] = []
+        var clock = 0.0
+        for sentence in cleanSentences {
+            for word in words(sentence.text) {
+                transcript.append(TranscriptWord(w: word, s: clock, e: clock + 0.2))
+                clock += 0.25
+            }
+        }
+        for (index, word) in words(corrupt.text).enumerated() {
+            let start = 3_600 + Double(index) * 600
+            transcript.append(TranscriptWord(w: word, s: start, e: start + 0.2))
+        }
+
+        let result = Matcher.align(sentences: cleanSentences + [corrupt], transcript: transcript)
+
+        XCTAssertTrue(result.sentences[0..<20].allSatisfy(\.isTimed))
+        XCTAssertFalse(result.sentences[20].isTimed)
+        XCTAssertEqual(result.sentenceCoverage, 20.0 / 21.0, accuracy: 0.0001)
+        XCTAssertLessThan(result.audioCoverage, 0.1)
+        XCTAssertEqual(result.coverage, result.audioCoverage, accuracy: 0.0001)
+        XCTAssertTrue(result.sourceAppearsIncomplete)
     }
 
     private func makeSentences(count: Int) -> [EPUBSentence] {

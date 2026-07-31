@@ -1,0 +1,181 @@
+{
+  "audio": [
+    {
+      "duration_s": 3.936236,
+      "file": "audio/01.aiff",
+      "offset_s": 0
+    },
+    {
+      "duration_s": 5.669796,
+      "file": "audio/02.aiff",
+      "offset_s": 3.936236
+    },
+    {
+      "duration_s": 2.610522,
+      "file": "audio/03.aiff",
+      "offset_s": 9.606032
+    },
+    {
+      "duration_s": 4.249705,
+      "file": "audio/04.aiff",
+      "offset_s": 12.216554
+    },
+    {
+      "duration_s": 3.881361,
+      "file": "audio/05.aiff",
+      "offset_s": 16.466259
+    },
+    {
+      "duration_s": 3.028481,
+      "file": "audio/06.aiff",
+      "offset_s": 20.34762
+    }
+  ],
+  "book": {
+    "aligner": {
+      "coverage": 1,
+      "created": "2026-07-19",
+      "engine": "synthetic-review-fixture",
+      "model": "macOS Samantha"
+    },
+    "author": "Clip Review Fixture",
+    "duration_s": 23.376101,
+    "title": "The Sentence Worth Keeping"
+  },
+  "chapters": [
+    {
+      "epub_href": "review.xhtml",
+      "start_s": 0,
+      "title": "A Short Evening"
+    }
+  ],
+  "sentences": [
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 3.936236,
+      "epub": {
+        "char_end": 75,
+        "char_start": 0,
+        "href": "review.xhtml"
+      },
+      "i": 0,
+      "p": 0,
+      "start_s": 0,
+      "text": "The rain moved softly across the window, and the room settled into evening.",
+      "words": [
+        {
+          "e": 3.936236,
+          "s": 0,
+          "w": "The rain moved softly across the window, and the room settled into evening."
+        }
+      ]
+    },
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 9.606032,
+      "epub": {
+        "char_end": 179,
+        "char_start": 77,
+        "href": "review.xhtml"
+      },
+      "i": 1,
+      "p": 1,
+      "start_s": 3.936236,
+      "text": "Mara closed the book for a moment, not because she had finished, but because one line asked to be kept.",
+      "words": [
+        {
+          "e": 9.606032,
+          "s": 3.936236,
+          "w": "Mara closed the book for a moment, not because she had finished, but because one line asked to be kept."
+        }
+      ]
+    },
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 12.216554,
+      "epub": {
+        "char_end": 229,
+        "char_start": 181,
+        "href": "review.xhtml"
+      },
+      "i": 2,
+      "p": 2,
+      "start_s": 9.606032,
+      "text": "She touched the small clip button beside the player.",
+      "words": [
+        {
+          "e": 12.216554,
+          "s": 9.606032,
+          "w": "She touched the small clip button beside the player."
+        }
+      ]
+    },
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 16.466259,
+      "epub": {
+        "char_end": 311,
+        "char_start": 231,
+        "href": "review.xhtml"
+      },
+      "i": 3,
+      "p": 3,
+      "start_s": 12.216554,
+      "text": "The passage appeared with its title and author, ready for the notebook she trusted.",
+      "words": [
+        {
+          "e": 16.466259,
+          "s": 12.216554,
+          "w": "The passage appeared with its title and author, ready for the notebook she trusted."
+        }
+      ]
+    },
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 20.34762,
+      "epub": {
+        "char_end": 375,
+        "char_start": 313,
+        "href": "review.xhtml"
+      },
+      "i": 4,
+      "p": 4,
+      "start_s": 16.466259,
+      "text": "Good reading, she thought, was partly attention and partly return.",
+      "words": [
+        {
+          "e": 20.34762,
+          "s": 16.466259,
+          "w": "Good reading, she thought, was partly attention and partly return."
+        }
+      ]
+    },
+    {
+      "chapter": 0,
+      "conf": 1,
+      "end_s": 23.376101,
+      "epub": {
+        "char_end": 432,
+        "char_start": 377,
+        "href": "review.xhtml"
+      },
+      "i": 5,
+      "p": 5,
+      "start_s": 20.34762,
+      "text": "Then the story continued, and her hands were free again.",
+      "words": [
+        {
+          "e": 23.376101,
+          "s": 20.34762,
+          "w": "Then the story continued, and her hands were free again."
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

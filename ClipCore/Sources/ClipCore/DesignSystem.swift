@@ -7,18 +7,31 @@ import AppKit
 #endif
 
 public enum ClipDesign {
-    public static let cardRadius: CGFloat = 8
-    public static let controlRadius: CGFloat = 6
+    public static let cardRadius: CGFloat = 24
+    public static let controlRadius: CGFloat = 14
     public static let hairlineWidth: CGFloat = 1
     public static let pageMargin: CGFloat = 24
 
-    public static let paper = adaptiveColor(light: 0xF7F2E6, dark: 0x15110B)
-    public static let surface = adaptiveColor(light: 0xFCF8EF, dark: 0x1E1912)
-    public static let ink = adaptiveColor(light: 0x1E1A13, dark: 0xEDE5D3)
-    public static let inkSecondary = adaptiveColor(light: 0x6E6455, dark: 0xA79B85)
-    public static let hairline = adaptiveColor(light: 0xD9CFBB, dark: 0x342D21)
-    public static let terracotta = adaptiveColor(light: 0xC2542B, dark: 0xCE6B43)
-    public static let terracottaPressed = adaptiveColor(light: 0xA64621, dark: 0xB5552F)
+    // Marginalia's palette: clear paper, deep blue ink, a restrained bloom,
+    // and one warm marigold detail. Dark values preserve the same hierarchy.
+    public static let paper = adaptiveColor(light: 0xFFFFFF, dark: 0x071426)
+    public static let paperStrong = adaptiveColor(light: 0xFFFDF9, dark: 0x0B1B30)
+    public static let surface = adaptiveColor(light: 0xFFFAF2, dark: 0x0D1E35)
+    public static let surfaceSoft = adaptiveColor(light: 0xF3EEE6, dark: 0x12243D)
+    public static let ink = adaptiveColor(light: 0x061F46, dark: 0xF7F3EA)
+    public static let inkSecondary = adaptiveColor(light: 0x5D6370, dark: 0xB5BECC)
+    public static let hairline = adaptiveColor(light: 0xDCE0E5, dark: 0x2D4058)
+    public static let hairlineStrong = adaptiveColor(light: 0xBEC6D0, dark: 0x3D536E)
+    public static let accent = adaptiveColor(light: 0x063B73, dark: 0x7FB3E6)
+    public static let accentPressed = adaptiveColor(light: 0x183F58, dark: 0x96C3EC)
+    public static let bloom = adaptiveColor(light: 0xC75A31, dark: 0xE98760)
+    public static let bloomPressed = adaptiveColor(light: 0xA94828, dark: 0xCF6C49)
+    public static let marigold = adaptiveColor(light: 0xD88A10, dark: 0xF1B955)
+    public static let shadow = adaptiveColor(light: 0x0C1C34, dark: 0x000000).opacity(0.08)
+
+    // Compatibility names used throughout the existing highlight UI.
+    public static let terracotta = bloom
+    public static let terracottaPressed = bloomPressed
 
     public static func bodyFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
         .custom("EBGaramond-Regular", size: size, relativeTo: style)
@@ -34,6 +47,10 @@ public enum ClipDesign {
 
     public static func italicFont(size: CGFloat = 17, relativeTo style: Font.TextStyle = .body) -> Font {
         .custom("EBGaramond-Italic", size: size, relativeTo: style)
+    }
+
+    public static func labelFont(size: CGFloat = 13, weight: Font.Weight = .semibold) -> Font {
+        .system(size: size, weight: weight, design: .default)
     }
 
     public static func readerFont(size: CGFloat = 20) -> Font { bodyFont(size: size, relativeTo: .body) }
@@ -62,19 +79,19 @@ public struct StampChipStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ClipDesign.mediumFont(size: 14))
+            .font(ClipDesign.labelFont(size: 12))
             .textCase(.uppercase)
-            .tracking(0.7)
+            .tracking(1.1)
             .foregroundStyle(isSelected ? ClipDesign.paper : ClipDesign.ink)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
-                    .fill(isSelected ? (configuration.isPressed ? ClipDesign.terracottaPressed : ClipDesign.terracotta) : ClipDesign.surface)
+                    .fill(isSelected ? (configuration.isPressed ? ClipDesign.accentPressed : ClipDesign.accent) : ClipDesign.paperStrong)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
-                    .stroke(isSelected ? ClipDesign.terracotta : ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
+                    .stroke(isSelected ? ClipDesign.accent : ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
             )
             .opacity(configuration.isPressed && !isSelected ? 0.72 : 1)
     }
@@ -85,15 +102,13 @@ public struct PrimaryClipButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ClipDesign.semiboldFont(size: 16))
-            .textCase(.uppercase)
-            .tracking(0.8)
+            .font(ClipDesign.labelFont(size: 15, weight: .medium))
             .foregroundStyle(ClipDesign.paper)
             .padding(.horizontal, 18)
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
-                    .fill(configuration.isPressed ? ClipDesign.terracottaPressed : ClipDesign.terracotta)
+                    .fill(configuration.isPressed ? ClipDesign.accentPressed : ClipDesign.accent)
             )
     }
 }
@@ -104,12 +119,13 @@ public struct PaperCardModifier: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .padding(16)
-            .background(ClipDesign.surface)
+            .background(ClipDesign.paperStrong)
             .clipShape(RoundedRectangle(cornerRadius: ClipDesign.cardRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: ClipDesign.cardRadius)
                     .stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
             )
+            .shadow(color: ClipDesign.shadow, radius: 18, y: 10)
     }
 }
 

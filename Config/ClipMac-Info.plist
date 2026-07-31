@@ -20,8 +20,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
+	<string>public.app-category.books</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Michael Dempsey</string>
 	<key>NSUbiquitousContainers</key>

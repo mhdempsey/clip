@@ -79,6 +79,31 @@ final class BundleImporterTests: XCTestCase {
         XCTAssertEqual(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool, true)
     }
 
+    func testAppReviewDemoIsAValidImportableClipbook() async throws {
+        let sourceBundle = repositoryRoot
+            .appendingPathComponent("AppStore/ReviewAssets/Clip-Demo.clipbook", isDirectory: true)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))
+        defer {
+            try? database.writer.close()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let importer = BundleImporter(
+            database: database,
+            localBooksDirectory: root.appendingPathComponent("Imported Books", isDirectory: true)
+        )
+
+        let imported = try await importer.importLocalBundle(at: sourceBundle)
+        let sentences = try database.sentences(bookID: imported.id)
+
+        XCTAssertEqual(imported.title, "The Sentence Worth Keeping")
+        XCTAssertEqual(imported.author, "Clip Review Fixture")
+        XCTAssertEqual(sentences.count, 6)
+        XCTAssertEqual(sentences.first?.text, "The rain moved softly across the window, and the room settled into evening.")
+        XCTAssertTrue(sentences.allSatisfy(\.isTimed))
+    }
+
     private var repositoryRoot: URL {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<2 { url.deleteLastPathComponent() }

@@ -2,6 +2,9 @@ import ClipCore
 import SwiftUI
 
 struct PlayerView: View {
+    private static let bottomControlClearance: CGFloat = 112
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var player: PlayerEngine
     @EnvironmentObject private var settings: ClipSettings
@@ -12,12 +15,12 @@ struct PlayerView: View {
     var body: some View {
         ScrollView {
             if let book = player.currentBook {
-                VStack(spacing: 22) {
-                    StampCover(book: book, width: 176, caption: false)
-                        .padding(.top, 10)
+                VStack(spacing: contentSpacing) {
+                    StampCover(book: book, width: coverWidth, caption: false)
+                        .padding(.top, horizontalSizeClass == .compact ? 2 : 10)
                     VStack(spacing: 4) {
                         Text(book.title)
-                            .font(ClipTypography.title(29))
+                            .font(ClipTypography.title(horizontalSizeClass == .compact ? 25 : 29))
                             .foregroundStyle(ClipDesign.ink)
                             .multilineTextAlignment(.center)
                         Text(book.author)
@@ -43,13 +46,8 @@ struct PlayerView: View {
                         transportButton("goforward.15", label: "Forward 15 seconds") { player.skip(by: 15) }
                     }
 
-                    PlaybackSpeedControl(
-                        value: player.playbackRate,
-                        onChange: player.setPlaybackRate
-                    )
-
                     DurationStampPicker(selection: $settings.clipWindowSeconds)
-                    ClipPrimaryButton(title: "Clip \(settings.clipWindowSeconds)s", systemImage: "scissors") {
+                    ClipPrimaryButton(title: "Clip last \(settings.clipWindowSeconds)s", systemImage: "scissors") {
                         guard !clipping else { return }
                         clipping = true
                         Task {
@@ -59,18 +57,41 @@ struct PlayerView: View {
                     }
                     .disabled(clipping)
                     .accessibilityIdentifier("player.clip")
+                    Text("Or say “Clip that.” Sends the matched passage to Readwise, ready for Marginalia.")
+                        .font(ClipTypography.italic(15))
+                        .foregroundStyle(ClipDesign.inkSecondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("player.clip-payoff")
 
-                    HStack {
+                    VStack(alignment: .trailing, spacing: 8) {
                         Button {
                             showingReader = true
                         } label: {
-                            Label("Read along", systemImage: "text.book.closed")
-                                .font(ClipTypography.semibold(16))
-                                .foregroundStyle(ClipDesign.ink)
+                            HStack(spacing: 10) {
+                                Image(systemName: "text.book.closed")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Read & listen")
+                                        .font(ClipTypography.semibold(16))
+                                    Text("Follow the ebook as the audiobook plays")
+                                        .font(ClipTypography.italic(14))
+                                        .foregroundStyle(ClipDesign.inkSecondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(ClipDesign.accent)
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(ClipDesign.paperStrong)
+                            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
+                                    .stroke(ClipDesign.hairlineStrong, lineWidth: ClipDesign.hairlineWidth)
+                            }
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("player.reader")
-                        Spacer()
                         if clipService.pendingCount > 0 {
                             Text("\(clipService.pendingCount) pending")
                                 .font(ClipTypography.italic(15))
@@ -78,9 +99,14 @@ struct PlayerView: View {
                                 .accessibilityIdentifier("player.pending")
                         }
                     }
+
+                    PlaybackSpeedControl(
+                        value: player.playbackRate,
+                        onChange: player.setPlaybackRate
+                    )
                 }
-                .padding(.horizontal, 28)
-                .padding(.bottom, 36)
+                .padding(.horizontal, horizontalSizeClass == .compact ? 20 : 28)
+                .padding(.bottom, Self.bottomControlClearance)
             } else {
                 noBook
             }
@@ -95,7 +121,7 @@ struct PlayerView: View {
                     .foregroundStyle(ClipDesign.ink)
             }
         }
-        .sheet(isPresented: $showingReader) {
+        .fullScreenCover(isPresented: $showingReader) {
             if let book = player.currentBook {
                 NavigationStack { ReaderView(book: book) }
             }
@@ -110,6 +136,14 @@ struct PlayerView: View {
             }
         }
         .accessibilityIdentifier("player.screen")
+    }
+
+    private var coverWidth: CGFloat {
+        horizontalSizeClass == .compact ? 124 : 176
+    }
+
+    private var contentSpacing: CGFloat {
+        horizontalSizeClass == .compact ? 14 : 22
     }
 
     private var noBook: some View {

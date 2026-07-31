@@ -17,9 +17,18 @@ final class PlayerEngine: ObservableObject {
         manifest?.chapters.last(where: { $0.startS <= globalTime })?.title ?? ""
     }
 
+    func chapterTitle(at index: Int) -> String {
+        guard let chapters = manifest?.chapters, chapters.indices.contains(index) else {
+            return "Chapter \(index + 1)"
+        }
+        let title = chapters[index].title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Chapter \(index + 1)" : title
+    }
+
     private let database: ClipDatabase
     private let defaults: UserDefaults
     private let player: AVQueuePlayer
+    private let resourceLoader: BundleResourceLoader
     private let liveActivity = LiveActivityCoordinator()
     private var manifest: PlaybackManifest?
     private var itemOffsets: [ObjectIdentifier: Double] = [:]
@@ -35,11 +44,13 @@ final class PlayerEngine: ObservableObject {
     init(
         database: ClipDatabase = .shared,
         defaults: UserDefaults = AppGroup.defaults,
-        player: AVQueuePlayer = AVQueuePlayer()
+        player: AVQueuePlayer = AVQueuePlayer(),
+        resourceLoader: BundleResourceLoader = BundleResourceLoader()
     ) {
         self.database = database
         self.defaults = defaults
         self.player = player
+        self.resourceLoader = resourceLoader
         playbackRate = ClipShared.validatedPlaybackRate(
             defaults.double(forKey: AppGroup.Key.playbackRate)
         )
@@ -65,10 +76,12 @@ final class PlayerEngine: ObservableObject {
                 persistPosition()
                 player.pause()
             }
-            let data = try Data(
-                contentsOf: book.bundleFileURL.appendingPathComponent("sync.json"),
-                options: .mappedIfSafe
-            )
+            let data = try await resourceLoader.data(
+                at: book.bundleFileURL.appendingPathComponent("sync.json"),
+                in: book.bundleFileURL
+            ) { [weak self] in
+                self?.playbackError = "Getting this audiobook ready…"
+            }
             let loadedManifest = try JSONDecoder().decode(PlaybackManifest.self, from: data)
             try await prepareAudioFiles(in: loadedManifest, for: book)
             try Task.checkCancellation()

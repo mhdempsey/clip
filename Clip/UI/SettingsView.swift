@@ -130,6 +130,8 @@ struct SettingsView: View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Say “Clip that,” “Bookmark that,” “Highlight that,” or “Underline that.”")
+                Text("Clip matches what you just heard to the ebook, sends the passage to Readwise, and makes it ready for Marginalia.")
+                    .foregroundStyle(ClipDesign.inkSecondary)
                 Text("If Siri doesn’t recognize one, make a personal Shortcut with that exact phrase and add the Clip action.")
                     .foregroundStyle(ClipDesign.inkSecondary)
             }
@@ -141,13 +143,35 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
+            Link(destination: ClipShared.supportURL) {
+                settingsLinkLabel("Clip Support")
+            }
+            .accessibilityIdentifier("settings.support")
+
+            Link(destination: ClipShared.privacyPolicyURL) {
+                settingsLinkLabel("Privacy Policy")
+            }
+            .accessibilityIdentifier("settings.privacy-policy")
+
             HStack {
                 Text("Version")
                 Spacer()
                 Text(version).font(ClipTypography.time(14)).foregroundStyle(ClipDesign.inkSecondary)
             }
+        } header: {
+            SmallCapsLabel(text: "About")
         }
         .listRowBackground(ClipDesign.surface)
+    }
+
+    private func settingsLinkLabel(_ title: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.caption)
+                .foregroundStyle(ClipDesign.inkSecondary)
+        }
     }
 
     private var version: String {

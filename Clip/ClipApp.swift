@@ -39,7 +39,7 @@ struct ClipApp: App {
             .environmentObject(model.settings)
             .environmentObject(player)
             .environmentObject(clipService)
-            .tint(ClipDesign.ink)
+            .tint(ClipDesign.accent)
             .preferredColorScheme(nil)
             .overlay(alignment: .top) {
                 if let toast = clipService.toast {
@@ -110,10 +110,10 @@ private struct ClipTabBar: View {
                 Text(title)
                     .font(ClipDesign.semiboldFont(size: 13, relativeTo: .caption))
             }
-            .foregroundStyle(selected ? ClipDesign.ink : ClipDesign.inkSecondary)
+            .foregroundStyle(selected ? ClipDesign.accent : ClipDesign.inkSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(selected ? ClipDesign.ink.opacity(0.06) : Color.clear)
+            .background(selected ? ClipDesign.accent.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
         }
         .buttonStyle(.plain)

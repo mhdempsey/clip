@@ -6,7 +6,10 @@ struct ReaderView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var player: PlayerEngine
+    @EnvironmentObject private var settings: ClipSettings
     @EnvironmentObject private var clipService: ClipService
+    @AppStorage("Clip.Reader.TextSize") private var readerTextSize = 21.0
+    @AppStorage("Clip.Reader.LineSpacing") private var readerLineSpacing = 10.0
     @State private var sentences: [SentenceRecord] = []
     @State private var timedSentences: [SentenceRecord] = []
     @State private var activeIndex: Int?
@@ -14,6 +17,7 @@ struct ReaderView: View {
     @State private var frames: [Int: CGRect] = [:]
     @State private var selection: ClosedRange<Int>?
     @State private var selectionAnchor: Int?
+    @State private var clipping = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -38,8 +42,10 @@ struct ReaderView: View {
                             }
                     }
                 }
-                .padding(.horizontal, 26)
-                .padding(.bottom, 100)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 34)
             }
             .coordinateSpace(name: "readerSpace")
             .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in
@@ -55,38 +61,24 @@ struct ReaderView: View {
                     withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(next, anchor: .center) }
                 }
             }
-            .overlay(alignment: .bottom) {
-                if !following {
-                    Button {
-                        following = true
-                        if let activeIndex {
-                            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(activeIndex, anchor: .center) }
-                        }
-                    } label: {
-                        Label("Resume", systemImage: "arrow.down.to.line")
-                            .font(ClipTypography.semibold(15))
-                            .foregroundStyle(ClipDesign.paper)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 9)
-                            .background(ClipDesign.ink)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 18)
-                    .accessibilityIdentifier("reader.resume")
-                }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                readerFooter(proxy: proxy)
             }
         }
         .background(ClipDesign.paper.ignoresSafeArea())
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                displayMenu
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
                     .font(ClipTypography.semibold())
                     .foregroundStyle(ClipDesign.ink)
             }
         }
+        .toolbarBackground(ClipDesign.paper, for: .navigationBar)
         .task {
             sentences = (try? ClipDatabase.shared.sentences(bookID: book.id)) ?? []
             timedSentences = sentences.filter(\.isTimed)
@@ -100,7 +92,7 @@ struct ReaderView: View {
             Text("❦")
                 .font(ClipTypography.title(24))
                 .foregroundStyle(ClipDesign.inkSecondary)
-            SmallCapsLabel(text: "Chapter \(chapter + 1)")
+            SmallCapsLabel(text: player.chapterTitle(at: chapter))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 28)
@@ -111,16 +103,20 @@ struct ReaderView: View {
         let isActive = activeIndex == sentence.i
         let isSelected = selection?.contains(sentence.i) == true
         return Text(sentence.text)
-            .font(ClipTypography.body(20))
+            .font(ClipTypography.body(CGFloat(readerTextSize)))
             .foregroundStyle(ClipDesign.ink)
-            .lineSpacing(10)
+            .lineSpacing(CGFloat(readerLineSpacing))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 3)
-            .padding(.vertical, 2)
+            .padding(.leading, 10)
+            .padding(.trailing, 4)
+            .padding(.vertical, 3)
             .background((isActive || isSelected) ? ClipDesign.terracotta.opacity(isSelected ? 0.2 : 0.13) : Color.clear)
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .leading) {
                 if isActive || isSelected {
-                    Rectangle().fill(ClipDesign.terracotta).frame(height: 1)
+                    Capsule()
+                        .fill(ClipDesign.terracotta)
+                        .frame(width: 3)
+                        .padding(.vertical, 3)
                 }
             }
             .contentShape(Rectangle())
@@ -131,6 +127,194 @@ struct ReaderView: View {
             .accessibilityAddTraits(isActive ? .isSelected : [])
             .accessibilityHint(sentence.isTimed ? "Double tap to seek to this sentence. Long press and drag to clip a passage." : "This sentence has no audio timing.")
             .accessibilityIdentifier("reader.sentence.\(sentence.i)")
+    }
+
+    private var displayMenu: some View {
+        Menu {
+            Section("Text size") {
+                Button {
+                    readerTextSize = max(17, readerTextSize - 1)
+                } label: {
+                    Label("Smaller", systemImage: "textformat.size.smaller")
+                }
+                .disabled(readerTextSize <= 17)
+
+                Button {
+                    readerTextSize = min(29, readerTextSize + 1)
+                } label: {
+                    Label("Larger", systemImage: "textformat.size.larger")
+                }
+                .disabled(readerTextSize >= 29)
+            }
+
+            Section("Line spacing") {
+                Button {
+                    readerLineSpacing = max(6, readerLineSpacing - 2)
+                } label: {
+                    Label("Tighter", systemImage: "line.3.horizontal.decrease")
+                }
+                .disabled(readerLineSpacing <= 6)
+
+                Button {
+                    readerLineSpacing = min(16, readerLineSpacing + 2)
+                } label: {
+                    Label("Looser", systemImage: "line.3.horizontal")
+                }
+                .disabled(readerLineSpacing >= 16)
+            }
+
+            Divider()
+            Button("Reset reading display") {
+                readerTextSize = 21
+                readerLineSpacing = 10
+            }
+        } label: {
+            Label("Reading display", systemImage: "textformat.size")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(ClipDesign.ink)
+        }
+        .accessibilityLabel("Reading display")
+        .accessibilityIdentifier("reader.display")
+    }
+
+    private func readerFooter(proxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 0) {
+            if !following {
+                Button {
+                    following = true
+                    if let activeIndex {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(activeIndex, anchor: .center)
+                        }
+                    }
+                } label: {
+                    Label("Return to spoken passage", systemImage: "scope")
+                        .font(ClipTypography.semibold(15))
+                        .foregroundStyle(ClipDesign.paper)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(ClipDesign.ink)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 9)
+                .accessibilityIdentifier("reader.resume")
+            }
+
+            VStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    SmallCapsLabel(
+                        text: following ? "Following audio" : "Browsing text",
+                        color: following ? ClipDesign.accent : ClipDesign.inkSecondary
+                    )
+                    Spacer()
+                    Text(ClipFormatters.time(player.globalTime))
+                        .font(ClipTypography.time(12))
+                        .foregroundStyle(ClipDesign.inkSecondary)
+                        .contentTransition(.numericText())
+                }
+
+                GeometryReader { geometry in
+                    let progress = book.durationS > 0
+                        ? min(max(player.globalTime / book.durationS, 0), 1)
+                        : 0
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(ClipDesign.hairline).frame(height: 2)
+                        Capsule().fill(ClipDesign.terracotta)
+                            .frame(width: max(2, geometry.size.width * progress), height: 2)
+                    }
+                    .frame(maxHeight: .infinity)
+                }
+                .frame(height: 4)
+                .accessibilityHidden(true)
+
+                HStack(spacing: 18) {
+                    readerTransportButton(
+                        "gobackward.15",
+                        label: "Back 15 seconds",
+                        identifier: "reader.back"
+                    ) {
+                        player.skip(by: -15)
+                    }
+                    readerTransportButton(
+                        player.isPlaying ? "pause.fill" : "play.fill",
+                        label: player.isPlaying ? "Pause" : "Play",
+                        identifier: "reader.play-pause",
+                        emphasized: true
+                    ) {
+                        player.togglePlayback()
+                    }
+                    readerTransportButton(
+                        "goforward.15",
+                        label: "Forward 15 seconds",
+                        identifier: "reader.forward"
+                    ) {
+                        player.skip(by: 15)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Button {
+                        guard !clipping else { return }
+                        clipping = true
+                        Task {
+                            defer { clipping = false }
+                            _ = try? await clipService.clipNow()
+                        }
+                    } label: {
+                        Label("Clip \(settings.clipWindowSeconds)s", systemImage: "scissors")
+                            .font(ClipDesign.labelFont(size: 14, weight: .semibold))
+                            .foregroundStyle(ClipDesign.paper)
+                            .padding(.horizontal, 13)
+                            .frame(minHeight: 44)
+                            .background(ClipDesign.terracotta)
+                            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(clipping)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Clip the last \(settings.clipWindowSeconds) seconds to Readwise")
+                    .accessibilityIdentifier("reader.clip")
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 9)
+            .background(ClipDesign.paperStrong)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(ClipDesign.hairline)
+                    .frame(height: ClipDesign.hairlineWidth)
+            }
+            .shadow(color: ClipDesign.shadow, radius: 12, y: -4)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func readerTransportButton(
+        _ symbol: String,
+        label: String,
+        identifier: String,
+        emphasized: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: emphasized ? 21 : 18, weight: .regular))
+                .foregroundStyle(emphasized ? ClipDesign.paper : ClipDesign.ink)
+                .frame(width: emphasized ? 48 : 40, height: emphasized ? 48 : 40)
+                .background(emphasized ? ClipDesign.accent : Color.clear)
+                .clipShape(Circle())
+                .overlay {
+                    if !emphasized {
+                        Circle().stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
     }
 
     private var selectionGesture: some Gesture {

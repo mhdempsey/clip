@@ -79,10 +79,10 @@ final class PairingDraft: ObservableObject {
 
     var pairStatus: String {
         switch (epubURL != nil, audio.isEmpty) {
-        case (false, true): "Drop a book and its audiobook."
-        case (true, true): "Got the book — now the audio."
-        case (false, false): "Got the audio — now the book."
-        case (true, false): "A good pair. Check the order, then align."
+        case (false, true): "Step 1 of 4 · Add both files"
+        case (true, true): "Ebook added · Now add the audiobook"
+        case (false, false): "Audiobook added · Now add the ebook"
+        case (true, false): "Step 2 of 4 · Check the order, then click Align"
         }
     }
 
@@ -205,6 +205,7 @@ enum MacAppError: LocalizedError {
     case missingPair
     case unreadableAudio(String)
     case noTranscript(String)
+    case incompleteBookText(Double)
     case malformedBundle
 
     var errorDescription: String? {
@@ -217,6 +218,8 @@ enum MacAppError: LocalizedError {
             "Clip couldn’t read the duration of \(name)."
         case let .noTranscript(name):
             "Clip couldn’t hear any spoken words in \(name)."
+        case let .incompleteBookText(coverage):
+            "Clip found reliable ebook text for only \(Int((coverage * 100).rounded()))% of the audio. The EPUB may be incomplete or damaged; try another copy."
         case .malformedBundle:
             "This Clip book is missing some of its information."
         }

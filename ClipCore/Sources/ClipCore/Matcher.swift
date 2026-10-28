@@ -64,7 +64,9 @@ public enum Matcher {
 
         // WhisperKit can return completed VAD chunks out of order. Keep stable
         // ordering for equal timestamps while restoring chronological order.
-        let chronologicalTranscript = transcript.enumerated().sorted { left, right in
+        let chronologicalTranscript = transcript.filter {
+            $0.s.isFinite && $0.e.isFinite && $0.s >= 0 && $0.e >= $0.s
+        }.enumerated().sorted { left, right in
             if left.element.s != right.element.s { return left.element.s < right.element.s }
             if left.element.e != right.element.e { return left.element.e < right.element.e }
             return left.offset < right.offset
@@ -116,7 +118,7 @@ public enum Matcher {
         for offset in sentences.indices {
             let source = sentences[offset]
             let transcriptOffsets = transcriptOffsetsBySentence[offset].sorted()
-            guard let first = transcriptOffsets.first, let last = transcriptOffsets.last else {
+            guard let first = transcriptOffsets.first else {
                 result.append(untimedSentence(source))
                 continue
             }
@@ -129,7 +131,10 @@ public enum Matcher {
             }
             let denominator = max(1, sentenceTokenCounts[offset])
             let confidence = min(1, Double(matchedTokensBySentence[offset]) / Double(denominator))
-            let duration = chronologicalTranscript[last].e - chronologicalTranscript[first].s
+            let start = chronologicalTranscript[first].s
+            // Overlapping words can end out of order even after sorting by start.
+            let end = words.reduce(start) { max($0, $1.e) }
+            let duration = end - start
             let maximumPlausibleDuration = max(15, Double(denominator) * 2)
             guard confidence >= minimumSentenceConfidence,
                   duration <= maximumPlausibleDuration else {
@@ -138,8 +143,8 @@ public enum Matcher {
             }
             result.append(SyncSentence(
                 i: source.i,
-                startS: chronologicalTranscript[first].s,
-                endS: chronologicalTranscript[last].e,
+                startS: start,
+                endS: end,
                 text: source.text,
                 chapter: source.chapter,
                 p: source.p,
@@ -156,7 +161,7 @@ public enum Matcher {
         let audioCoverage = matchedAudioCoverage(
             sentences: result,
             transcriptStart: chronologicalTranscript.first?.s,
-            transcriptEnd: chronologicalTranscript.last?.e
+            transcriptEnd: chronologicalTranscript.map(\.e).max()
         )
         return MatchResult(
             sentences: result,
@@ -408,20 +413,23 @@ public enum Matcher {
             if let previousIndex,
                let previousEnd = sentences[previousIndex].endS,
                let currentStart = sentences[index].startS,
+               let currentEnd = sentences[index].endS,
                previousEnd > currentStart {
-                let boundary = (previousEnd + currentStart) / 2
+                let boundary = (min(previousEnd, currentEnd) + currentStart) / 2
                 sentences[previousIndex].endS = boundary
-                if var words = sentences[previousIndex].words, !words.isEmpty {
-                    words[words.count - 1].e = boundary
-                    sentences[previousIndex].words = words
-                }
                 sentences[index].startS = boundary
-                if var words = sentences[index].words, !words.isEmpty {
-                    words[0].s = boundary
-                    sentences[index].words = words
-                }
+                clampWordsToSentence(&sentences[previousIndex])
+                clampWordsToSentence(&sentences[index])
             }
             previousIndex = index
+        }
+    }
+
+    private static func clampWordsToSentence(_ sentence: inout SyncSentence) {
+        guard let start = sentence.startS, let end = sentence.endS else { return }
+        sentence.words = sentence.words?.map { word in
+            let wordStart = min(end, max(start, word.s))
+            return TimedWord(w: word.w, s: wordStart, e: min(end, max(wordStart, word.e)))
         }
     }
 

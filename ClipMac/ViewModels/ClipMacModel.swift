@@ -18,10 +18,21 @@ final class ClipMacModel: ObservableObject {
     @Published var quality: AlignmentQuality {
         didSet { UserDefaults.standard.set(quality.rawValue, forKey: Self.qualityKey) }
     }
+    @Published var alignmentLocation: AlignmentLocation {
+        didSet { UserDefaults.standard.set(alignmentLocation.rawValue, forKey: "Clip.AlignmentLocation") }
+    }
+    @Published var cloudSpendingLimitUSD: Double {
+        didSet { UserDefaults.standard.set(cloudSpendingLimitUSD, forKey: "Clip.CloudSpendingLimitUSD") }
+    }
+    @Published var hasOpenRouterKey = false
+    @Published var credentialMessage: String?
+    @Published var cloudConfirmation: CloudAlignmentRequest?
+    @Published var isPreparingCloud = false
     @Published var shelfMessage: String?
 
     private static let qualityKey = "Clip.AlignmentQuality"
     private let transcriber = WhisperTranscriber()
+    private let cloudTranscriber = OpenRouterTranscriber()
     private let shelfService = ShelfService()
     private let activityKeeper = ActivityKeeper()
     private var processingTask: Task<Void, Never>?
@@ -30,10 +41,37 @@ final class ClipMacModel: ObservableObject {
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.qualityKey)
         quality = AlignmentQuality(rawValue: stored ?? "") ?? .standard
+        alignmentLocation = AlignmentLocation(rawValue: UserDefaults.standard.string(forKey: "Clip.AlignmentLocation") ?? "") ?? .onMac
+        cloudSpendingLimitUSD = UserDefaults.standard.object(forKey: "Clip.CloudSpendingLimitUSD") as? Double ?? 5
+        do { hasOpenRouterKey = try OpenRouterCredentials.containsKey() }
+        catch { credentialMessage = error.localizedDescription }
+        ClipMacUITestFixture.installIfRequested(draft: draft)
         Task { await refreshShelf() }
     }
 
     var hasRunningJob: Bool { jobs.contains { $0.stage.isActive } }
+
+    func saveOpenRouterKey(_ key: String) -> Bool {
+        do {
+            try OpenRouterCredentials.save(key)
+            hasOpenRouterKey = true
+            credentialMessage = "Key saved in this Mac’s Keychain."
+            return true
+        } catch {
+            credentialMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func removeOpenRouterKey() {
+        do {
+            try OpenRouterCredentials.remove()
+            hasOpenRouterKey = false
+            credentialMessage = "OpenRouter key removed."
+        } catch {
+            credentialMessage = error.localizedDescription
+        }
+    }
 
     func chooseFiles() {
         addFiles(FileIngestionService.chooseFiles())
@@ -99,14 +137,77 @@ final class ClipMacModel: ObservableObject {
     }
 
     func enqueueAlignment() {
-        guard let source = draft.snapshot() else {
+        guard draft.canAlign, let source = draft.snapshot() else {
             draft.inlineMessage = MacAppError.missingPair.localizedDescription
             return
         }
-        let job = AlignmentJob(source: source, quality: quality)
+        if alignmentLocation == .openRouter {
+            prepareCloudAlignment(source: source, quality: quality)
+        } else {
+            enqueue(source: source, quality: quality, location: .onMac, spendingLimitUSD: 0)
+        }
+    }
+
+    func confirmCloudAlignment() {
+        guard let request = cloudConfirmation else { return }
+        cloudConfirmation = nil
+        if let id = request.retryingJobID { jobs.removeAll { $0.id == id } }
+        enqueue(source: request.source, quality: request.quality, location: .openRouter, spendingLimitUSD: request.spendingLimitUSD)
+    }
+
+    func retry(_ job: AlignmentJob) {
+        if job.location == .openRouter {
+            prepareCloudAlignment(source: job.source, quality: job.quality, retryingJobID: job.id)
+        } else {
+            jobs.removeAll { $0.id == job.id }
+            enqueue(source: job.source, quality: job.quality, location: .onMac, spendingLimitUSD: 0)
+        }
+    }
+
+    private func prepareCloudAlignment(source: PairingSnapshot, quality: AlignmentQuality, retryingJobID: UUID? = nil) {
+        guard !isPreparingCloud else { return }
+        guard hasOpenRouterKey else {
+            draft.inlineMessage = "Add your OpenRouter API key in Clip Settings before using cloud alignment."
+            return
+        }
+        let limit = cloudSpendingLimitUSD
+        guard limit.isFinite, limit > 0 else {
+            draft.inlineMessage = "Set a spending limit greater than $0 in Clip Settings."
+            return
+        }
+        isPreparingCloud = true
+        Task {
+            defer { isPreparingCloud = false }
+            let scoped = source.audio.map(\.url).filter { $0.startAccessingSecurityScopedResource() }
+            defer { scoped.forEach { $0.stopAccessingSecurityScopedResource() } }
+            do {
+                var audio: [AudioSource] = []
+                for item in source.audio {
+                    let duration: TimeInterval
+                    if let known = item.duration { duration = known }
+                    else { duration = try await AudioMetadataService.read(item.url).duration }
+                    guard duration.isFinite, duration > 0 else { throw MacAppError.unreadableAudio(item.url.lastPathComponent) }
+                    audio.append(AudioSource(id: item.id, url: item.url, duration: duration))
+                }
+                cloudConfirmation = CloudAlignmentRequest(
+                    source: PairingSnapshot(epubURL: source.epubURL, audio: audio, title: source.title, author: source.author, coverData: source.coverData),
+                    quality: quality, spendingLimitUSD: limit, retryingJobID: retryingJobID
+                )
+            } catch {
+                draft.inlineMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func enqueue(source: PairingSnapshot, quality: AlignmentQuality, location: AlignmentLocation, spendingLimitUSD: Double) {
+        let job = AlignmentJob(source: source, quality: quality, location: location, spendingLimitUSD: spendingLimitUSD)
         jobs.insert(job, at: 0)
-        draft.reset()
-        userReorderedAudio = false
+        if let current = draft.snapshot(), current.epubURL == source.epubURL,
+           current.audio.map(\.url) == source.audio.map(\.url),
+           current.title == source.title, current.author == source.author {
+            draft.reset()
+            userReorderedAudio = false
+        }
         startQueueIfNeeded()
     }
 
@@ -229,14 +330,24 @@ final class ClipMacModel: ObservableObject {
 
         do {
             let totalDuration = job.source.audio.compactMap(\.duration).reduce(0, +)
-            job.estimatedTotal = totalDuration * job.quality.estimatedRealtimeFactor
+            job.estimatedTotal = job.location == .onMac ? totalDuration * job.quality.estimatedRealtimeFactor : nil
             job.estimatedRemaining = job.estimatedTotal
+            let apiKey = job.location == .openRouter ? try OpenRouterCredentials.load() : nil
             let result = try await AlignmentPipeline.run(
                 source: job.source,
                 quality: job.quality,
-                transcriber: transcriber
+                transcriber: transcriber,
+                cloudTranscriber: cloudTranscriber,
+                location: job.location,
+                apiKey: apiKey,
+                spendingLimitUSD: job.spendingLimitUSD
             ) { update in
                 Task { @MainActor in
+                    if case let .cloudSpending(cost) = update {
+                        job.cloudCostUSD = max(job.cloudCostUSD, cost)
+                        return
+                    }
+                    guard job.stage != .done, job.stage != .failed else { return }
                     switch update {
                     case let .stage(stage, detail, fraction):
                         job.stage = stage
@@ -255,10 +366,16 @@ final class ClipMacModel: ObservableObject {
                         job.stage = .listening
                         job.progress = max(priorListeningProgress, fraction)
                         job.modelDownloadProgress = nil
-                        job.detail = cacheHit ? "Using the private listening pass already on this Mac." : "Listening privately on this Mac."
+                        if job.location == .openRouter {
+                            job.detail = cacheHit ? "Using saved OpenRouter transcript chunks on this Mac." : "Transcribing audio with OpenRouter. Completed chunks are saved on this Mac."
+                        } else {
+                            job.detail = cacheHit ? "Using the private listening pass already on this Mac." : "Listening privately on this Mac."
+                        }
                         if let estimate = job.estimatedTotal {
                             job.estimatedRemaining = max(0, estimate * (1 - fraction))
                         }
+                    case .cloudSpending:
+                        break
                     }
                 }
             }
@@ -270,7 +387,9 @@ final class ClipMacModel: ObservableObject {
         } catch {
             job.stage = .failed
             job.errorMessage = error.localizedDescription
-            job.detail = "Nothing was changed. Check the files and try again."
+            job.detail = job.location == .openRouter
+                ? "Source files are unchanged. Retry to reuse saved chunks; OpenRouter may have charged for completed uploads."
+                : "Nothing was changed. Check the files and try again."
         }
     }
 }

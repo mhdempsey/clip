@@ -1,17 +1,98 @@
 import ClipCore
 import SwiftUI
 
+enum LibrarySort: String, CaseIterable, Identifiable {
+    case recent, added, title, author, progress
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent: "Recently opened"
+        case .added: "Recently added"
+        case .title: "Title"
+        case .author: "Author"
+        case .progress: "Progress"
+        }
+    }
+
+    func sorted(_ books: [BookRecord]) -> [BookRecord] {
+        books.sorted { left, right in
+            switch self {
+            case .recent:
+                let a = left.lastPlayedAt ?? left.addedAt, b = right.lastPlayedAt ?? right.addedAt
+                if a != b { return a > b }
+            case .added:
+                if left.addedAt != right.addedAt { return left.addedAt > right.addedAt }
+            case .author:
+                let order = left.author.localizedStandardCompare(right.author)
+                if order != .orderedSame { return order == .orderedAscending }
+            case .progress:
+                if left.progress != right.progress { return left.progress > right.progress }
+            case .title: break
+            }
+            let order = left.title.localizedStandardCompare(right.title)
+            return order == .orderedSame ? left.id < right.id : order == .orderedAscending
+        }
+    }
+}
+
+enum LibraryFilter: String, CaseIterable, Identifiable {
+    case reading, read, all
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .reading: "Reading"
+        case .read: "Read"
+        case .all: "All"
+        }
+    }
+    func includes(_ book: BookRecord) -> Bool {
+        switch self {
+        case .reading: !book.isRead
+        case .read: book.isRead
+        case .all: true
+        }
+    }
+}
+
 struct LibraryView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var importer: BundleImporter
+    @AppStorage("Clip.Library.Sort") private var sort: LibrarySort = .recent
+    @AppStorage("Clip.Library.Filter") private var filter: LibraryFilter = .reading
+    @AppStorage("Clip.Library.ListView") private var listView = true
+    @State private var clipsBook: BookRecord?
 
     private let columns = [GridItem(.adaptive(minimum: 138), spacing: 22)]
+    private var visibleBooks: [BookRecord] { sort.sorted(model.books.filter(filter.includes)) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                ClipScreenTitle("Library")
-                    .padding(.top, 12)
+                HStack {
+                    ClipScreenTitle("Library")
+                    Spacer()
+                    Menu {
+                        Picker("Sort books", selection: $sort) {
+                            ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down").font(.subheadline).frame(minHeight: 44)
+                    }
+                    .accessibilityLabel("Sort books: \(sort.title)")
+                    .accessibilityIdentifier("library.sort")
+                    Menu {
+                        Picker("Library view", selection: $listView) {
+                            Label("Compact list", systemImage: "list.bullet").tag(true)
+                            Label("Cover grid", systemImage: "square.grid.2x2").tag(false)
+                        }
+                    } label: {
+                        Image(systemName: listView ? "list.bullet" : "square.grid.2x2").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Library view: \(listView ? "Compact list" : "Cover grid")")
+                    .accessibilityIdentifier("library.layout")
+                }
+                .padding(.top, 12)
+                .foregroundStyle(ClipDesign.ink)
                 if !importer.iCloudAvailable {
                     statusLine("iCloud Drive is off. AirDrop or open a .clipbook from Files, or sign in to sync books from your Mac.")
                 }
@@ -21,21 +102,15 @@ struct LibraryView: View {
                 if model.books.isEmpty && importer.downloads.isEmpty {
                     emptyState
                 } else {
-                    if !importer.downloads.isEmpty { downloadSection }
-                    LazyVGrid(columns: columns, alignment: .center, spacing: 28) {
-                        ForEach(model.books) { book in
-                            Button { model.open(book) } label: {
-                                StampCover(book: book)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("Delete local copy", systemImage: "icloud.and.arrow.up") {
-                                    importer.deleteLocalCopy(of: book)
-                                }
-                            }
-                            .accessibilityIdentifier("library.book.\(book.id)")
-                        }
+                    Picker("Books", selection: $filter) {
+                        ForEach(LibraryFilter.allCases) { Text($0.title).tag($0) }
                     }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("library.filter")
+                    if !importer.downloads.isEmpty { downloadSection }
+                    if visibleBooks.isEmpty { filteredEmptyState }
+                    else if listView { compactList }
+                    else { coverGrid }
                 }
             }
             .padding(.horizontal, 24)
@@ -48,6 +123,87 @@ struct LibraryView: View {
             model.reloadBooks()
         }
         .accessibilityIdentifier("library.screen")
+        .onAppear { model.reloadBooks() }
+        .onChange(of: model.selectedTab) { _, tab in if tab == .library { model.reloadBooks() } }
+        .sheet(item: $clipsBook) { book in
+            NavigationStack {
+                BookClipsList(bookID: book.id)
+                    .navigationTitle("Clips & highlights")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .safeAreaInset(edge: .top) { Text(book.title).font(.subheadline).foregroundStyle(.secondary).padding() }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { clipsBook = nil } } }
+            }
+        }
+    }
+
+    private var compactList: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(visibleBooks) { book in
+                HStack(spacing: 10) {
+                    Button { model.open(book) } label: {
+                        HStack(spacing: 12) {
+                            StampCover(book: book, width: 34, caption: false)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(book.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                                    .foregroundStyle(ClipDesign.ink)
+                                Text(book.author).font(.caption).lineLimit(1).foregroundStyle(ClipDesign.inkSecondary)
+                                Text(book.isRead ? "Read" : book.progress > 0 ? "\(Int(book.progress * 100))% · \(remainingTime(book)) left" : remainingTime(book))
+                                    .font(.caption2).foregroundStyle(ClipDesign.inkSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("library.book.\(book.id)")
+                    .contextMenu { bookActions(book) }
+                    Menu { bookActions(book) } label: {
+                        Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                            .foregroundStyle(ClipDesign.inkSecondary)
+                    }
+                    .accessibilityLabel("Actions for \(book.title)")
+                    .accessibilityIdentifier("library.actions.\(book.id)")
+                }
+                .padding(.vertical, 10)
+                Divider().overlay(ClipDesign.hairline)
+            }
+        }
+    }
+
+    private var coverGrid: some View {
+        LazyVGrid(columns: columns, alignment: .center, spacing: 28) {
+            ForEach(visibleBooks) { book in
+                Button { model.open(book) } label: { StampCover(book: book) }
+                    .buttonStyle(.plain)
+                    .contextMenu { bookActions(book) }
+                    .accessibilityIdentifier("library.book.\(book.id)")
+            }
+        }
+    }
+
+    @ViewBuilder private func bookActions(_ book: BookRecord) -> some View {
+        Button("Clips & highlights", systemImage: "highlighter") { clipsBook = book }
+        Button(book.isRead ? "Move to Reading" : "Mark as Read", systemImage: book.isRead ? "book" : "checkmark.circle") {
+            model.setRead(book, isRead: !book.isRead)
+        }
+        Button("Delete local copy", systemImage: "icloud.and.arrow.up") { importer.deleteLocalCopy(of: book) }
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 12) {
+            Text(filter == .read ? "No finished books yet" : "No books here")
+                .font(ClipTypography.title(24)).foregroundStyle(ClipDesign.ink)
+            Text(filter == .read ? "Mark a book as Read from its menu. You can move it back to Reading anytime." : "Your finished books are in Read.")
+                .font(.subheadline).foregroundStyle(ClipDesign.inkSecondary).multilineTextAlignment(.center)
+            Button("Show all books") { filter = .all }
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 48)
+    }
+
+    private func remainingTime(_ book: BookRecord) -> String {
+        let minutes = max(0, Int((book.durationS - book.positionS) / 60))
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
 
     private var emptyState: some View {

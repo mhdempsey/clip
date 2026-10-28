@@ -107,7 +107,7 @@ export default function Home() {
         <div className="section-heading">
           <p className="eyebrow">Privacy policy</p>
           <h2>Your books stay yours.</h2>
-          <p className="effective">Effective July 19, 2026</p>
+          <p className="effective">Effective October 27, 2026</p>
         </div>
 
         <div className="policy-grid">
@@ -123,6 +123,13 @@ export default function Home() {
           <article>
             <h3>What leaves the app</h3>
             <p>
+              Transcription runs on your Mac by default. If you choose
+              OpenRouter cloud alignment, Clip uploads audiobook audio to
+              OpenRouter and its transcription providers using your account.
+              EPUB matching stays on your Mac. Your OpenRouter API key is
+              stored in this Mac’s Keychain and sent only to OpenRouter.
+            </p>
+            <p>
               When you choose to export a highlight, Clip sends the selected
               passage and its book details to Readwise using the Readwise API.
               Your Readwise access token is stored in Apple Keychain and is
@@ -137,6 +144,8 @@ export default function Home() {
               policy. Marginalia receives highlights only through a connection
               you set up with your Readwise account; Clip does not send data to
               Marginalia directly.
+              OpenRouter and its selected providers process cloud transcription
+              audio under their own privacy and data policies.
             </p>
             <p className="policy-links">
               <a href="https://www.apple.com/legal/privacy/" rel="noreferrer">
@@ -144,6 +153,9 @@ export default function Home() {
               </a>
               <a href="https://readwise.io/privacy" rel="noreferrer">
                 Readwise privacy
+              </a>
+              <a href="https://openrouter.ai/privacy" rel="noreferrer">
+                OpenRouter privacy
               </a>
             </p>
           </article>
@@ -154,6 +166,8 @@ export default function Home() {
               Drive, remove your Readwise token in Clip, or revoke the token in
               Readwise. To delete highlights already exported, use your
               Readwise account controls.
+              You can choose On this Mac to keep transcription local and remove
+              your OpenRouter key in Clip Settings.
             </p>
           </article>
           <article>

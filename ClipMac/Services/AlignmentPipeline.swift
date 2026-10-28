@@ -5,6 +5,7 @@ enum AlignmentPipelineUpdate {
     case stage(AlignmentStage, detail: String, fraction: Double)
     case modelDownload(fraction: Double)
     case listening(fraction: Double, cacheHit: Bool)
+    case cloudSpending(Double)
 }
 
 enum AlignmentPipeline {
@@ -12,8 +13,18 @@ enum AlignmentPipeline {
         source: PairingSnapshot,
         quality: AlignmentQuality,
         transcriber: WhisperTranscriber,
+        cloudTranscriber: OpenRouterTranscriber,
+        location: AlignmentLocation,
+        apiKey: String?,
+        spendingLimitUSD: Double,
         update: @escaping @Sendable (AlignmentPipelineUpdate) -> Void
     ) async throws -> CompletedAlignment {
+        var audioNames = Set<String>()
+        for audio in source.audio {
+            guard audioNames.insert(audio.url.lastPathComponent.lowercased()).inserted else {
+                throw BundleWriterError.duplicateAudioFilename(audio.url.lastPathComponent)
+            }
+        }
         update(.stage(.preparing, detail: "Reading the book and checking the audio.", fraction: 0.02))
         let epub = try EPUBReader.read(from: source.epubURL)
 
@@ -35,7 +46,7 @@ enum AlignmentPipeline {
         let preparedAudio = zip(source.audio, durations).map { audio, duration in
             AudioSource(id: audio.id, url: audio.url, duration: duration)
         }
-        let heardWords = try await transcriber.transcribe(audio: preparedAudio, quality: quality) { transcriptionUpdate in
+        let transcriptionUpdate: @Sendable (TranscriptionUpdate) -> Void = { transcriptionUpdate in
             switch transcriptionUpdate {
             case .cacheLookup:
                 update(.stage(.preparing, detail: "Looking for an earlier listening pass.", fraction: 0.07))
@@ -48,8 +59,20 @@ enum AlignmentPipeline {
                     fraction: 0.08
                 ))
             case let .listening(fraction, cacheHit):
-                update(.listening(fraction: fraction, cacheHit: cacheHit))
+                update(.listening(fraction: 0.08 + fraction * 0.86, cacheHit: cacheHit))
+            case let .cloudSpending(cost):
+                update(.cloudSpending(cost))
             }
+        }
+        let heardWords: [MacTranscriptWord]
+        switch location {
+        case .onMac:
+            heardWords = try await transcriber.transcribe(audio: preparedAudio, quality: quality, update: transcriptionUpdate)
+        case .openRouter:
+            guard let apiKey, !apiKey.isEmpty else { throw OpenRouterCredentials.CredentialError.emptyKey }
+            heardWords = try await cloudTranscriber.transcribe(
+                audio: preparedAudio, apiKey: apiKey, spendingLimitUSD: spendingLimitUSD, update: transcriptionUpdate
+            )
         }
 
         update(.stage(.matching, detail: "Setting the printed words beside the spoken ones.", fraction: 0.96))
@@ -89,8 +112,8 @@ enum AlignmentPipeline {
                 author: source.author,
                 durationS: totalDuration,
                 aligner: AlignerInfo(
-                    engine: "whisperkit",
-                    model: quality.modelName,
+                    engine: location == .openRouter ? "openrouter" : "whisperkit",
+                    model: location == .openRouter ? OpenRouterTranscriptionClient.model : quality.modelName,
                     coverage: match.coverage,
                     created: date
                 )

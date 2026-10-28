@@ -138,7 +138,7 @@ private struct ClipMacOnboardingView: View {
                     number: 2,
                     symbol: "waveform",
                     title: "Click Align",
-                    detail: "Clip listens privately on this Mac and matches the audio to the ebook’s exact words."
+                    detail: "Clip matches the audio to the ebook’s exact words. Use this Mac or choose OpenRouter cloud transcription in Settings."
                 )
                 onboardingDivider
                 onboardingStep(

@@ -6,6 +6,23 @@ import XCTest
 
 @MainActor
 final class BundleImporterTests: XCTestCase {
+    func testImportRejectsAudioDirectorySymlinkOutsidePackage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("Linked.clipbook", isDirectory: true)
+        let outsideAudio = root.appendingPathComponent("Private audio", isDirectory: true)
+        let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))
+        defer { try? database.writer.close(); try? FileManager.default.removeItem(at: root) }
+        try makeBundle(at: source)
+        try FileManager.default.moveItem(at: source.appendingPathComponent("audio"), to: outsideAudio)
+        try FileManager.default.createSymbolicLink(at: source.appendingPathComponent("audio"), withDestinationURL: outsideAudio)
+        let importer = BundleImporter(database: database, localBooksDirectory: root.appendingPathComponent("Imported", isDirectory: true))
+        do {
+            _ = try await importer.importLocalBundle(at: source)
+            XCTFail("An imported package must not read audio from outside its own directory")
+        } catch { }
+        XCTAssertTrue(try database.books().isEmpty)
+    }
+
     func testLocalImportCopiesBundleIntoPersistentStorageAndIndexesIt() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

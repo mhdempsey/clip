@@ -3,6 +3,11 @@
 SESSION_HANDOFF.md
 .env
 .env.*
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 *.key
 *.p8
 *.p12

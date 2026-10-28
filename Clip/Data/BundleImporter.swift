@@ -181,8 +181,8 @@ final class BundleImporter: NSObject, ObservableObject {
                 Task { await importBundle(at: url) }
             }
         }
-        let syncURL = url.appendingPathComponent("sync.json")
         do {
+            let syncURL = try ClipBookBundle.resourceURL("sync.json", in: url)
             var importDates = AppGroup.defaults.dictionary(forKey: AppGroup.Key.importDates) as? [String: Double] ?? [:]
             let initialModified = try? syncURL.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate?.timeIntervalSince1970
@@ -257,7 +257,7 @@ final class BundleImporter: NSObject, ObservableObject {
         id: String,
         syncData: Data? = nil
     ) throws -> PreparedBundle {
-        let syncURL = contentURL.appendingPathComponent("sync.json")
+        let syncURL = try ClipBookBundle.resourceURL("sync.json", in: contentURL)
         let data: Data
         if let syncData {
             data = syncData
@@ -267,13 +267,10 @@ final class BundleImporter: NSObject, ObservableObject {
         let sync = try JSONDecoder.clipSync.decode(ClipBookSync.self, from: data)
         try sync.validate()
 
-        let rootPath = contentURL.standardizedFileURL.path + "/"
-        let audioURLs = sync.audio.map { item in
-            contentURL.appendingPathComponent(item.file).standardizedFileURL
+        let audioURLs = try sync.audio.map { item in
+            try ClipBookBundle.resourceURL(item.file, in: contentURL)
         }
-        guard !audioURLs.isEmpty,
-              audioURLs.allSatisfy({ $0.path.hasPrefix(rootPath) })
-        else {
+        guard !audioURLs.isEmpty else {
             throw BundleImportError.invalidPackage
         }
         let unavailableAudio = ClipBookBundle.audioFilesRequiringDownload(audioURLs)

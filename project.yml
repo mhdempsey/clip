@@ -12,7 +12,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted
-    CURRENT_PROJECT_VERSION: 12
+    CURRENT_PROJECT_VERSION: 14
     MARKETING_VERSION: 1.0
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ZV897Q6SZF
@@ -196,11 +196,41 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.ui-tests
 
+  ClipMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ClipMacTests
+    dependencies:
+      - target: ClipMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.mac-tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Clip.app/Contents/MacOS/Clip"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  ClipMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: ClipMacUITests
+    dependencies:
+      - target: ClipMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.michael.clip.mac-ui-tests
+
   ClipWidgets:
     type: app-extension
     platform: iOS
     sources:
       - path: ClipWidgets
+      - path: Clip/Data/Database.swift
+      - path: Clip/Data/SyncStore.swift
+      - path: Clip/Support/AppGroup.swift
+      - path: Clip/Clipping/ClipCaptureStore.swift
     dependencies:
       - package: ClipCore
       - package: GRDB
@@ -230,6 +260,13 @@ schemes:
         ClipMac: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: ClipMacTests
+          parallelizable: false
+        - name: ClipMacUITests
+          parallelizable: false
     archive:
       config: Release
   Clip:

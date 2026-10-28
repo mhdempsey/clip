@@ -180,6 +180,21 @@ final class PlayerEngineTests: XCTestCase {
         XCTAssertEqual(engine.currentChapterTitle, "Second Chapter")
     }
 
+    func testPausedSeekSavesReadingProgressImmediatelyWithoutStartingPlayback() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        try fixture.database.save(book: fixture.book, sentences: [])
+        let engine = PlayerEngine(database: fixture.database)
+        await engine.load(fixture.book)
+        engine.seek(to: 1.25)
+        XCTAssertEqual(engine.globalTime, 1.25)
+        XCTAssertFalse(engine.isPlaying)
+        XCTAssertEqual(try fixture.database.book(id: fixture.book.id)?.positionS, 1.25)
+    }
+
     private func makeFixture(includeAudio: Bool) throws -> (
         root: URL,
         database: ClipDatabase,

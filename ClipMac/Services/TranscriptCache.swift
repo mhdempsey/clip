@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct MacTranscriptWord: Codable, Hashable {
+struct MacTranscriptWord: Codable, Hashable, Sendable {
     let text: String
     let start: TimeInterval
     let end: TimeInterval
@@ -19,6 +19,11 @@ actor TranscriptCache {
     static let shared = TranscriptCache()
 
     private let fileManager = FileManager.default
+    private let directory: URL?
+
+    init(directory: URL? = nil) {
+        self.directory = directory
+    }
 
     func audioSetHash(_ urls: [URL]) throws -> String {
         var digest = SHA256()
@@ -58,7 +63,7 @@ actor TranscriptCache {
     }
 
     private func cacheURL(hash: String, model: String) throws -> URL {
-        let support = try fileManager.url(
+        let support = try directory ?? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,

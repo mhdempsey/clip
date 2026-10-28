@@ -39,6 +39,12 @@ struct AlignmentJobView: View {
             default:
                 progressContent
             }
+            if job.location == .openRouter {
+                Text("OpenRouter reported this run: \(ClipFormatting.usd(job.cloudCostUSD)) · saved chunks reused at no new charge")
+                    .font(ClipFont.regular(13))
+                    .foregroundStyle(ClipDesign.inkSecondary)
+                    .accessibilityIdentifier("cloud-job-cost")
+            }
         }
         .clipCard()
         .accessibilityElement(children: .contain)
@@ -152,8 +158,9 @@ struct AlignmentJobView: View {
             Text(job.detail)
                 .font(ClipFont.italic(15))
                 .foregroundStyle(ClipDesign.inkSecondary)
-            Button("Choose another pair") { model.dismiss(job) }
+            Button("Retry saved work") { model.retry(job) }
                 .buttonStyle(PaperButtonStyle(role: .secondary))
+                .accessibilityIdentifier("retry-alignment")
         }
         .accessibilityIdentifier("alignment-error")
     }

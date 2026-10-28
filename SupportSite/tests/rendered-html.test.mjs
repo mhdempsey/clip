@@ -1,26 +1,26 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { unstable_dev } from "wrangler";
 
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
+  const worker = await unstable_dev(fileURLToPath(new URL("../dist/server/index.js", import.meta.url)), {
+    config: fileURLToPath(new URL("../dist/server/wrangler.json", import.meta.url)),
+    local: true,
+    ip: "127.0.0.1",
+    port: 0,
+    inspectorPort: 0,
+    persist: false,
+    logLevel: "error",
+    experimental: { disableExperimentalWarning: true, disableDevRegistry: true },
+  });
+  try {
+    const response = await worker.fetch("/", { headers: { accept: "text/html" } });
+    return new Response(await response.text(), { status: response.status, headers: Object.fromEntries(response.headers) });
+  } finally {
+    await worker.stop();
+  }
 }
 
 test("server-renders Clip support and privacy content", async () => {
@@ -33,7 +33,7 @@ test("server-renders Clip support and privacy content", async () => {
   assert.match(html, /Your audiobook and ebook, in the same place/);
   assert.match(html, /say <strong>“Clip that.”<\/strong>/);
   assert.match(html, /id="privacy"/);
-  assert.match(html, /Effective July 19, 2026/);
+  assert.match(html, /Effective October 27, 2026/);
   assert.match(html, /mdemps9190@hotmail\.com/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

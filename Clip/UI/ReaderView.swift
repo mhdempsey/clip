@@ -5,365 +5,336 @@ struct ReaderView: View {
     let book: BookRecord
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var player: PlayerEngine
     @EnvironmentObject private var settings: ClipSettings
     @EnvironmentObject private var clipService: ClipService
-    @AppStorage("Clip.Reader.TextSize") private var readerTextSize = 21.0
-    @AppStorage("Clip.Reader.LineSpacing") private var readerLineSpacing = 10.0
-    @State private var sentences: [SentenceRecord] = []
-    @State private var timedSentences: [SentenceRecord] = []
+    @StateObject private var preferences = ReaderPreferences()
+    @State private var document = ReaderDocument(sentences: [], chapterTitle: { _ in "" })
     @State private var activeIndex: Int?
-    @State private var following = true
-    @State private var frames: [Int: CGRect] = [:]
-    @State private var selection: ClosedRange<Int>?
-    @State private var selectionAnchor: Int?
+    @State private var following = false
+    @State private var controlsVisible = true
+    @State private var showingAppearance = false
+    @State private var showingContents = false
+    @State private var showingSearch = false
+    @State private var searchQuery = ""
+    @State private var bookToolsTab = 0
+    @State private var browsing = false
+    @State private var browsingSentence: Int?
+    @State private var focusedRange: NSRange?
+    @State private var navigation: ReaderNavigation?
+    @State private var visibleCharacter = 0
+    @State private var pageNumber = 1
+    @State private var pageCount = 0
     @State private var clipping = false
+    @State private var errorMessage: String?
+    @State private var loadError = false
+
+    private var palette: ReaderPalette { preferences.value.palette }
+    private var currentChapter: ReaderDocument.Chapter? {
+        document.chapters.last(where: { $0.range.location <= visibleCharacter })
+    }
+    private var progress: Int {
+        guard !document.text.isEmpty else { return 0 }
+        return min(100, Int(Double(visibleCharacter) / Double(document.utf16Length) * 100))
+    }
+    private var locationLabel: String {
+        preferences.value.mode == .pages && pageCount > 0
+            ? "Page \(pageNumber) of \(pageCount)"
+            : "\(progress)% read"
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(sentences.indices, id: \.self) { offset in
-                        let sentence = sentences[offset]
-                        if offset == 0 || sentences[offset - 1].chapter != sentence.chapter {
-                            chapterBreak(sentence.chapter)
-                        } else if sentences[offset - 1].p != sentence.p {
-                            Spacer().frame(height: 18)
-                        }
-                        sentenceView(sentence)
-                            .id(sentence.i)
-                            .background {
-                                GeometryReader { geometry in
-                                    Color.clear.preference(
-                                        key: SentenceFrameKey.self,
-                                        value: [sentence.i: geometry.frame(in: .named("readerSpace"))]
-                                    )
-                                }
-                            }
-                    }
+        VStack(spacing: 0) {
+            header.frame(height: 52)
+            if document.passages.isEmpty {
+                ContentUnavailableView {
+                    Label(loadError ? "Unable to open text" : "No text available", systemImage: "book")
+                } description: {
+                    Text(loadError ? "Try opening this book again." : "This book does not contain readable text.")
                 }
-                .frame(maxWidth: 680)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 34)
+                .frame(maxHeight: .infinity)
+            } else {
+                ReaderTextView(
+                    document: document, appearance: preferences.value,
+                    activeSentence: activeIndex, following: following,
+                    navigation: navigation,
+                    onToggleControls: { setControlsVisible(!controlsVisible) },
+                    onManualMove: { following = false; setControlsVisible(false) },
+                    onLocation: { character, page, count in
+                        visibleCharacter = character
+                        pageNumber = page
+                        pageCount = count
+                    },
+                    onHighlight: { indices, text in saveHighlight(indices, text: text) },
+                    onPlay: playFrom,
+                    onReaderMove: { range in
+                        if browsing {
+                            focusedRange = nil
+                            browsingSentence = document.playbackSentence(in: range)?.i
+                        } else if let sentence = document.playbackSentence(in: range) { moveAudio(to: sentence) }
+                    },
+                    focusedRange: focusedRange
+                )
+                .accessibilityIdentifier("reader.text")
             }
-            .coordinateSpace(name: "readerSpace")
-            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in
-                if selection == nil { following = false }
-            })
-            .simultaneousGesture(selectionGesture)
-            .onPreferenceChange(SentenceFrameKey.self) { frames = $0 }
-            .onChange(of: player.globalTime) { _, time in
-                let next = activeSentence(at: time)
-                guard next != activeIndex else { return }
-                activeIndex = next
-                if following, let next {
-                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(next, anchor: .center) }
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                readerFooter(proxy: proxy)
+            footer.frame(height: 108)
+        }
+        .background(Color(palette.paper).ignoresSafeArea())
+        .foregroundStyle(Color(palette.ink))
+        .tint(Color(palette.accent))
+        .toolbar(.hidden, for: .navigationBar)
+        .preferredColorScheme(preferences.value.theme == .dark ? .dark : .light)
+        .sheet(isPresented: $showingAppearance) { ReaderAppearanceSheet(preferences: preferences) }
+        .sheet(isPresented: $showingContents) { contents }
+        .sheet(isPresented: $showingSearch) {
+            ReaderSearchSheet(document: document, query: $searchQuery) { match in
+                browse(to: match.range)
+                showingSearch = false
             }
         }
-        .background(ClipDesign.paper.ignoresSafeArea())
-        .navigationTitle(book.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                displayMenu
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-                    .font(ClipTypography.semibold())
-                    .foregroundStyle(ClipDesign.ink)
+        .alert("Clip", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+        .overlay(alignment: .top) {
+            if let toast = clipService.toast {
+                Text(toast)
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .foregroundStyle(Color(palette.paper))
+                    .background(Color(palette.ink), in: Capsule())
+                    .padding(.top, 56)
+                    .allowsHitTesting(false)
             }
         }
-        .toolbarBackground(ClipDesign.paper, for: .navigationBar)
-        .task {
-            sentences = (try? ClipDatabase.shared.sentences(bookID: book.id)) ?? []
-            timedSentences = sentences.filter(\.isTimed)
-            activeIndex = activeSentence(at: player.globalTime)
-        }
+        .task { loadDocument() }
+        .onChange(of: player.globalTime) { _, time in activeIndex = document.activeSentence(at: time) }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("reader.screen")
     }
 
-    private func chapterBreak(_ chapter: Int) -> some View {
+    private var header: some View {
+        ZStack {
+            if controlsVisible {
+                HStack(spacing: 8) {
+                    iconButton("chevron.down", label: "Done reading", identifier: "reader.done") { dismiss() }
+                    VStack(spacing: 2) {
+                        Text(book.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        if browsing { Text("Browsing · audio unchanged").font(.system(size: 9)).lineLimit(1) }
+                    }
+                    .frame(maxWidth: .infinity).foregroundStyle(Color(palette.secondary))
+                    iconButton("magnifyingglass", label: "Search this book", identifier: "reader.search") { showingSearch = true }
+                        .disabled(document.passages.isEmpty)
+                    iconButton("list.bullet", label: "Contents and clips", identifier: "reader.contents") { showingContents = true }
+                    Button { showingAppearance = true } label: {
+                        Text("Aa").font(.system(size: 21, design: .serif)).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Reading appearance")
+                    .accessibilityIdentifier("reader.display")
+                }
+                .padding(.horizontal, 10)
+            } else {
+                Button { setControlsVisible(true) } label: {
+                    Text(book.title)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(palette.secondary))
+                        .lineLimit(1)
+                        .padding(.horizontal, 50)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Show reading controls")
+                .accessibilityIdentifier("reader.show-controls")
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var footer: some View {
         VStack(spacing: 8) {
-            Text("❦")
-                .font(ClipTypography.title(24))
-                .foregroundStyle(ClipDesign.inkSecondary)
-            SmallCapsLabel(text: player.chapterTitle(at: chapter))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 28)
-        .padding(.bottom, 20)
-    }
-
-    private func sentenceView(_ sentence: SentenceRecord) -> some View {
-        let isActive = activeIndex == sentence.i
-        let isSelected = selection?.contains(sentence.i) == true
-        return Text(sentence.text)
-            .font(ClipTypography.body(CGFloat(readerTextSize)))
-            .foregroundStyle(ClipDesign.ink)
-            .lineSpacing(CGFloat(readerLineSpacing))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 10)
-            .padding(.trailing, 4)
-            .padding(.vertical, 3)
-            .background((isActive || isSelected) ? ClipDesign.terracotta.opacity(isSelected ? 0.2 : 0.13) : Color.clear)
-            .overlay(alignment: .leading) {
-                if isActive || isSelected {
-                    Capsule()
-                        .fill(ClipDesign.terracotta)
-                        .frame(width: 3)
-                        .padding(.vertical, 3)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard let start = sentence.startS else { return }
-                player.seek(to: start)
-            }
-            .accessibilityAddTraits(isActive ? .isSelected : [])
-            .accessibilityHint(sentence.isTimed ? "Double tap to seek to this sentence. Long press and drag to clip a passage." : "This sentence has no audio timing.")
-            .accessibilityIdentifier("reader.sentence.\(sentence.i)")
-    }
-
-    private var displayMenu: some View {
-        Menu {
-            Section("Text size") {
-                Button {
-                    readerTextSize = max(17, readerTextSize - 1)
-                } label: {
-                    Label("Smaller", systemImage: "textformat.size.smaller")
-                }
-                .disabled(readerTextSize <= 17)
-
-                Button {
-                    readerTextSize = min(29, readerTextSize + 1)
-                } label: {
-                    Label("Larger", systemImage: "textformat.size.larger")
-                }
-                .disabled(readerTextSize >= 29)
-            }
-
-            Section("Line spacing") {
-                Button {
-                    readerLineSpacing = max(6, readerLineSpacing - 2)
-                } label: {
-                    Label("Tighter", systemImage: "line.3.horizontal.decrease")
-                }
-                .disabled(readerLineSpacing <= 6)
-
-                Button {
-                    readerLineSpacing = min(16, readerLineSpacing + 2)
-                } label: {
-                    Label("Looser", systemImage: "line.3.horizontal")
-                }
-                .disabled(readerLineSpacing >= 16)
-            }
-
-            Divider()
-            Button("Reset reading display") {
-                readerTextSize = 21
-                readerLineSpacing = 10
-            }
-        } label: {
-            Label("Reading display", systemImage: "textformat.size")
-                .labelStyle(.iconOnly)
-                .foregroundStyle(ClipDesign.ink)
-        }
-        .accessibilityLabel("Reading display")
-        .accessibilityIdentifier("reader.display")
-    }
-
-    private func readerFooter(proxy: ScrollViewProxy) -> some View {
-        VStack(spacing: 0) {
-            if !following {
-                Button {
-                    following = true
-                    if let activeIndex {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo(activeIndex, anchor: .center)
-                        }
-                    }
-                } label: {
-                    Label("Return to spoken passage", systemImage: "scope")
-                        .font(ClipTypography.semibold(15))
-                        .foregroundStyle(ClipDesign.paper)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(ClipDesign.ink)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, 9)
-                .accessibilityIdentifier("reader.resume")
-            }
-
-            VStack(spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    SmallCapsLabel(
-                        text: following ? "Following audio" : "Browsing text",
-                        color: following ? ClipDesign.accent : ClipDesign.inkSecondary
-                    )
-                    Spacer()
-                    Text(ClipFormatters.time(player.globalTime))
-                        .font(ClipTypography.time(12))
-                        .foregroundStyle(ClipDesign.inkSecondary)
-                        .contentTransition(.numericText())
-                }
-
-                GeometryReader { geometry in
-                    let progress = book.durationS > 0
-                        ? min(max(player.globalTime / book.durationS, 0), 1)
-                        : 0
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(ClipDesign.hairline).frame(height: 2)
-                        Capsule().fill(ClipDesign.terracotta)
-                            .frame(width: max(2, geometry.size.width * progress), height: 2)
-                    }
-                    .frame(maxHeight: .infinity)
-                }
-                .frame(height: 4)
-                .accessibilityHidden(true)
-
-                HStack(spacing: 18) {
-                    readerTransportButton(
-                        "gobackward.15",
-                        label: "Back 15 seconds",
-                        identifier: "reader.back"
-                    ) {
-                        player.skip(by: -15)
-                    }
-                    readerTransportButton(
-                        player.isPlaying ? "pause.fill" : "play.fill",
-                        label: player.isPlaying ? "Pause" : "Play",
-                        identifier: "reader.play-pause",
-                        emphasized: true
-                    ) {
-                        player.togglePlayback()
-                    }
-                    readerTransportButton(
-                        "goforward.15",
-                        label: "Forward 15 seconds",
-                        identifier: "reader.forward"
-                    ) {
-                        player.skip(by: 15)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    Button {
-                        guard !clipping else { return }
-                        clipping = true
-                        Task {
-                            defer { clipping = false }
-                            _ = try? await clipService.clipNow()
-                        }
-                    } label: {
-                        Label("Clip \(settings.clipWindowSeconds)s", systemImage: "scissors")
-                            .font(ClipDesign.labelFont(size: 14, weight: .semibold))
-                            .foregroundStyle(ClipDesign.paper)
-                            .padding(.horizontal, 13)
+            if controlsVisible {
+                HStack {
+                    Button(action: returnToAudio) {
+                        Label(following ? "Following audio" : "Return to audio", systemImage: "waveform")
+                            .font(.system(size: 11, weight: .medium))
                             .frame(minHeight: 44)
-                            .background(ClipDesign.terracotta)
-                            .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("reader.resume")
+                    Spacer()
+                    if browsing {
+                        Button("Play from here") {
+                            if let sentence = document.passages.first(where: { $0.sentence.i == browsingSentence })?.sentence { playFrom(sentence) }
+                        }
+                        .font(.system(size: 11, weight: .medium)).frame(minHeight: 44)
+                        .disabled(browsingSentence == nil)
+                        .accessibilityIdentifier("reader.play-from-here")
+                    } else {
+                        Text(locationLabel).font(.system(size: 11)).monospacedDigit()
+                            .foregroundStyle(Color(palette.secondary))
+                            .accessibilityIdentifier("reader.location")
+                    }
+                }
+                HStack(spacing: 12) {
+                    iconButton("gobackward.15", label: "Back 15 seconds", identifier: "reader.back") { player.skip(by: -15) }
+                    playButton
+                    iconButton("goforward.15", label: "Forward 15 seconds", identifier: "reader.forward") { player.skip(by: 15) }
+                    Spacer(minLength: 0)
+                    Button { saveHighlight(nil) } label: {
+                        Label("Clip \(settings.clipWindowSeconds)s", systemImage: "scissors")
+                            .font(.system(size: 13, weight: .medium))
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 44)
+                            .foregroundStyle(Color(palette.paper))
+                            .background(Color(palette.accent), in: Capsule())
+                    }
                     .disabled(clipping)
-                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Clip the last \(settings.clipWindowSeconds) seconds to Readwise")
                     .accessibilityIdentifier("reader.clip")
                 }
+            } else {
+                Spacer(minLength: 0)
+                HStack {
+                    playButton
+                    Spacer()
+                    Button { setControlsVisible(true) } label: {
+                        VStack(spacing: 4) {
+                            Text(locationLabel).monospacedDigit()
+                            if let currentChapter { Text(currentChapter.title).lineLimit(1) }
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color(palette.secondary))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("reader.location")
+                    Spacer()
+                    iconButton("scissors", label: "Clip the last \(settings.clipWindowSeconds) seconds", identifier: "reader.clip") { saveHighlight(nil) }
+                        .disabled(clipping)
+                }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 9)
-            .background(ClipDesign.paperStrong)
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(ClipDesign.hairline)
-                    .frame(height: ClipDesign.hairlineWidth)
-            }
-            .shadow(color: ClipDesign.shadow, radius: 12, y: -4)
         }
-        .accessibilityElement(children: .contain)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 8)
+        .buttonStyle(.plain)
     }
 
-    private func readerTransportButton(
-        _ symbol: String,
-        label: String,
-        identifier: String,
-        emphasized: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: emphasized ? 21 : 18, weight: .regular))
-                .foregroundStyle(emphasized ? ClipDesign.paper : ClipDesign.ink)
-                .frame(width: emphasized ? 48 : 40, height: emphasized ? 48 : 40)
-                .background(emphasized ? ClipDesign.accent : Color.clear)
-                .clipShape(Circle())
-                .overlay {
-                    if !emphasized {
-                        Circle().stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
-                    }
-                }
+    private var playButton: some View {
+        iconButton(player.isPlaying ? "pause.fill" : "play.fill", label: player.isPlaying ? "Pause" : "Play", identifier: "reader.play-pause") {
+            player.togglePlayback()
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
+    }
+
+    private func iconButton(_ symbol: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 18, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
+        }
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
     }
 
-    private var selectionGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("readerSpace")))
-            .onChanged { value in
-                guard case .second(true, let drag?) = value else { return }
-                following = false
-                let start = selectionAnchor ?? sentence(at: drag.startLocation)
-                let end = sentence(at: drag.location)
-                guard let start, let end else { return }
-                selectionAnchor = start
-                selection = min(start, end)...max(start, end)
-            }
-            .onEnded { _ in
-                guard let selection else {
-                    selectionAnchor = nil
-                    return
+    private var contents: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("Book tools", selection: $bookToolsTab) {
+                    Text("Contents").tag(0)
+                    Text("Clips").tag(1)
                 }
-                Task { _ = try? await clipService.clipSelection(bookID: book.id, sentenceIndices: selection) }
-                self.selection = nil
-                selectionAnchor = nil
+                .pickerStyle(.segmented).padding()
+                .accessibilityIdentifier("reader.book-tools")
+                if bookToolsTab == 1 {
+                    BookClipsList(bookID: book.id) { clip in
+                        if let range = document.clipRange(location: clip.location, text: clip.text) { browse(to: range) }
+                        showingContents = false
+                    }
+                } else {
+                    List(document.chapters) { chapter in
+                        Button {
+                            browsing = false
+                            focusedRange = nil
+                            following = false
+                            navigation = ReaderNavigation(character: chapter.range.location)
+                            if let sentence = document.passages.first(where: { $0.sentence.chapter == chapter.id && $0.sentence.isTimed })?.sentence { moveAudio(to: sentence) }
+                            showingContents = false
+                        } label: {
+                            HStack {
+                                Text(chapter.title).foregroundStyle(.primary)
+                                Spacer()
+                                if currentChapter?.id == chapter.id { Image(systemName: "checkmark").foregroundStyle(Color(palette.accent)) }
+                            }
+                            .frame(minHeight: 36).contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("reader.chapter.\(chapter.id)")
+                    }
+                }
             }
-    }
-
-    private func sentence(at point: CGPoint) -> Int? {
-        frames.min { lhs, rhs in
-            abs(lhs.value.midY - point.y) < abs(rhs.value.midY - point.y)
-        }?.key
-    }
-
-    private func activeSentence(at time: Double) -> Int? {
-        var low = 0
-        var high = timedSentences.count
-        while low < high {
-            let middle = (low + high) / 2
-            if (timedSentences[middle].startS ?? .infinity) <= time { low = middle + 1 }
-            else { high = middle }
+            .navigationTitle("This book")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingContents = false } } }
         }
-        guard low > 0 else { return nil }
-        let candidate = timedSentences[low - 1]
-        guard time <= (candidate.endS ?? -Double.infinity) else { return nil }
-        return candidate.i
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
-}
 
-private struct SentenceFrameKey: PreferenceKey {
-    static var defaultValue: [Int: CGRect] = [:]
-    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    private func setControlsVisible(_ visible: Bool) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { controlsVisible = visible }
     }
+
+    private func loadDocument() {
+        do {
+            let sentences = try ClipDatabase.shared.sentences(bookID: book.id)
+            document = ReaderDocument(sentences: sentences, chapterTitle: player.chapterTitle(at:))
+            activeIndex = document.activeSentence(at: player.globalTime)
+            following = true
+            let audioLocation = document.passages.first(where: { $0.sentence.i == activeIndex })?.range.location ?? 0
+            visibleCharacter = audioLocation
+            navigation = ReaderNavigation(character: visibleCharacter)
+        } catch { loadError = true }
+    }
+
+    private func returnToAudio() {
+        browsing = false
+        focusedRange = nil
+        following = true
+        if let passage = document.passages.first(where: { $0.sentence.i == activeIndex }) {
+            navigation = ReaderNavigation(character: passage.range.location)
+        }
+    }
+
+    private func browse(to range: NSRange) {
+        browsing = true
+        following = false
+        controlsVisible = true
+        focusedRange = range
+        browsingSentence = document.playbackSentence(in: range)?.i
+        navigation = ReaderNavigation(character: range.location)
+    }
+
+    private func playFrom(_ sentence: SentenceRecord) {
+        guard let time = sentence.startS else { return }
+        player.seek(to: time)
+        activeIndex = document.activeSentence(at: time)
+        player.play()
+        returnToAudio()
+    }
+
+    private func moveAudio(to sentence: SentenceRecord) {
+        guard let time = sentence.startS else { return }
+        player.seek(to: time)
+        activeIndex = sentence.i
+        following = true
+    }
+
+    private func saveHighlight(_ indices: ClosedRange<Int>?, text: String? = nil) {
+        guard !clipping else { return }
+        clipping = true
+        Task {
+            defer { clipping = false }
+            do {
+                if let indices { _ = try await clipService.clipSelection(bookID: book.id, sentenceIndices: indices, selectedText: text) }
+                else { _ = try await clipService.clipNow() }
+            } catch { errorMessage = "The highlight could not be saved. \(error.localizedDescription)" }
+        }
+    }
+
 }

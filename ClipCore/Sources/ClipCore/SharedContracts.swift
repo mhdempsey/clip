@@ -22,11 +22,13 @@ public enum ClipShared {
         public static let clipCommandSequence = "clipCommandSequence"
         public static let handledClipCommandSequence = "handledClipCommandSequence"
         public static let importDates = "clipbookImportDates"
+        public static let playbackSnapshot = "clipPlaybackSnapshot"
     }
 
     public enum DarwinNotification {
         public static let playbackCommand = "com.michael.clip.playback-command"
         public static let clipCommand = "com.michael.clip.clip-command"
+        public static let clipSaved = "com.michael.clip.clip-saved"
     }
 
     public static func validatedClipWindow(_ value: Int) -> Int {

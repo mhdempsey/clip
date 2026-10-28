@@ -77,7 +77,7 @@ final class PlayerEngine: ObservableObject {
                 player.pause()
             }
             let data = try await resourceLoader.data(
-                at: book.bundleFileURL.appendingPathComponent("sync.json"),
+                at: try ClipBookBundle.resourceURL("sync.json", in: book.bundleFileURL),
                 in: book.bundleFileURL
             ) { [weak self] in
                 self?.playbackError = "Getting this audiobook ready…"
@@ -147,6 +147,7 @@ final class PlayerEngine: ObservableObject {
         rebuildQueue(at: target)
         globalTime = target
         if resume { player.play() }
+        persistPosition()
         publishState(forceActivityUpdate: true)
     }
 
@@ -225,7 +226,11 @@ final class PlayerEngine: ObservableObject {
         itemOffsets.removeAll()
         itemObservations.removeAll()
         for segment in manifest.audio[segmentIndex...] {
-            let url = book.bundleFileURL.appendingPathComponent(segment.file)
+            guard let url = try? ClipBookBundle.resourceURL(segment.file, in: book.bundleFileURL) else {
+                player.removeAllItems()
+                playbackError = ClipBookResourceError.unsafePath.localizedDescription
+                return
+            }
             let item = AVPlayerItem(url: url)
             itemOffsets[ObjectIdentifier(item)] = segment.offsetS
             itemObservations.append(item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
@@ -240,7 +245,7 @@ final class PlayerEngine: ObservableObject {
     }
 
     private func prepareAudioFiles(in manifest: PlaybackManifest, for book: BookRecord) async throws {
-        let urls = manifest.audio.map { book.bundleFileURL.appendingPathComponent($0.file) }
+        let urls = try manifest.audio.map { try ClipBookBundle.resourceURL($0.file, in: book.bundleFileURL) }
         guard !urls.isEmpty else { throw PlaybackPreparationError.missingAudio }
 
         let fileManager = FileManager.default
@@ -351,6 +356,7 @@ final class PlayerEngine: ObservableObject {
             playbackRate: playbackRate
         )
         if let book = currentBook {
+            ClipPlaybackSnapshot(bookID: book.id, position: globalTime, duration: book.durationS, rate: playbackRate, isPlaying: isPlaying).store(defaults: defaults)
             liveActivity.update(book: book, elapsed: globalTime, isPlaying: isPlaying, force: forceActivityUpdate)
         }
     }

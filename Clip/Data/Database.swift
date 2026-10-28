@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import ClipCore
 
 struct BookRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Hashable, Sendable {
     static let databaseTableName = "book"
@@ -13,9 +14,12 @@ struct BookRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Ha
     var positionS: Double
     var addedAt: Date
     var lastPlayedAt: Date?
+    var readAt: Date? = nil
 
     var bundleFileURL: URL { URL(fileURLWithPath: bundleURL, isDirectory: true) }
-    var coverURL: URL? { coverPath.map { bundleFileURL.appendingPathComponent($0) } }
+    var coverURL: URL? { coverPath.flatMap { try? ClipBookBundle.resourceURL($0, in: bundleFileURL) } }
+    var isRead: Bool { readAt != nil }
+    var progress: Double { durationS > 0 ? min(1, max(0, positionS / durationS)) : 0 }
 }
 
 struct SentenceRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Hashable, Sendable {
@@ -107,6 +111,9 @@ final class ClipDatabase: @unchecked Sendable {
                 table.column("lastError", .text)
             }
         }
+        migrator.registerMigration("addBookReadStatus") { db in
+            try db.alter(table: "book") { table in table.add(column: "readAt", .datetime) }
+        }
         return migrator
     }
 
@@ -130,6 +137,7 @@ final class ClipDatabase: @unchecked Sendable {
                 preserved.positionS = existing.positionS
                 preserved.lastPlayedAt = existing.lastPlayedAt
                 preserved.addedAt = existing.addedAt
+                preserved.readAt = existing.readAt
             }
             try preserved.save(db)
             try SentenceRecord
@@ -160,6 +168,12 @@ final class ClipDatabase: @unchecked Sendable {
                 sql: "UPDATE book SET positionS = ?, lastPlayedAt = ? WHERE id = ?",
                 arguments: [max(0, position), Date(), bookID]
             )
+        }
+    }
+
+    func setRead(bookID: String, isRead: Bool) throws {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE book SET readAt = ? WHERE id = ?", arguments: [isRead ? Date() : nil, bookID])
         }
     }
 
@@ -195,6 +209,13 @@ final class ClipDatabase: @unchecked Sendable {
                 .filter(Column("sentAt") == nil)
                 .order(Column("createdAt"))
                 .fetchAll(db)
+        }
+    }
+
+    func clips(bookID: String) throws -> [ClipQueueRecord] {
+        try writer.read { db in
+            try ClipQueueRecord.filter(Column("bookId") == bookID)
+                .order(Column("createdAt").desc, Column("id").desc).fetchAll(db)
         }
     }
 

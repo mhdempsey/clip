@@ -38,6 +38,6 @@ struct WidgetClipStore {
               let book = try? queue.read({ db in
                   try Book.fetchOne(db, sql: "SELECT id, bundleURL, coverPath FROM book WHERE id = ?", arguments: [bookID])
               }), let cover = book.coverPath else { return nil }
-        return URL(fileURLWithPath: book.bundleURL).appendingPathComponent(cover).path
+        return try? ClipBookBundle.resourceURL(cover, in: URL(fileURLWithPath: book.bundleURL)).path
     }
 }

@@ -68,9 +68,9 @@ public actor ReadwiseClient {
     private var token: String
     private let session: URLSession
 
-    public init(token: String, session: URLSession = .shared) {
+    public init(token: String, session: URLSession? = nil) {
         self.token = token
-        self.session = session
+        self.session = session ?? CredentialedSession.shared
     }
 
     public func updateToken(_ token: String) {

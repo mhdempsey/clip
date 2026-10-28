@@ -8,12 +8,14 @@ public struct ClipActivityAttributes: ActivityAttributes, Hashable, Sendable {
         public var durationS: Double
         public var isPlaying: Bool
         public var windowSeconds: Int
+        public var clipFeedback: ClipActivityFeedback?
 
-        public init(elapsedS: Double, durationS: Double, isPlaying: Bool, windowSeconds: Int) {
+        public init(elapsedS: Double, durationS: Double, isPlaying: Bool, windowSeconds: Int, clipFeedback: ClipActivityFeedback? = nil) {
             self.elapsedS = elapsedS
             self.durationS = durationS
             self.isPlaying = isPlaying
             self.windowSeconds = windowSeconds
+            self.clipFeedback = clipFeedback
         }
     }
 

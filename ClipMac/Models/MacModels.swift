@@ -1,4 +1,13 @@
+import ClipCore
 import Foundation
+
+enum AlignmentLocation: String, CaseIterable, Identifiable {
+    case onMac
+    case openRouter
+
+    var id: String { rawValue }
+    var title: String { self == .onMac ? "On this Mac" : "OpenRouter cloud" }
+}
 
 enum AlignmentQuality: String, CaseIterable, Identifiable, Codable {
     case standard
@@ -60,6 +69,22 @@ struct PairingSnapshot {
     let title: String
     let author: String
     let coverData: Data?
+}
+
+struct CloudAlignmentRequest: Identifiable {
+    let id = UUID()
+    let source: PairingSnapshot
+    let quality: AlignmentQuality
+    let spendingLimitUSD: Double
+    let retryingJobID: UUID?
+
+    var estimatedCost: String {
+        let seconds = source.audio.reduce(0) { total, audio in
+            total + OpenRouterAudioChunk.plan(duration: audio.duration ?? 0).reduce(0) { $0 + $1.uploadDuration }
+        }
+        let rates = OpenRouterTranscriptionClient.estimatedRatesUSD
+        return "\(ClipFormatting.usd(seconds * rates.lowerBound))–\(ClipFormatting.usd(seconds * rates.upperBound))"
+    }
 }
 
 @MainActor
@@ -160,6 +185,8 @@ final class AlignmentJob: ObservableObject, Identifiable {
     let id = UUID()
     let source: PairingSnapshot
     let quality: AlignmentQuality
+    let location: AlignmentLocation
+    let spendingLimitUSD: Double
 
     @Published var stage: AlignmentStage = .waiting
     @Published var progress: Double = 0
@@ -169,12 +196,15 @@ final class AlignmentJob: ObservableObject, Identifiable {
     @Published var completed: CompletedAlignment?
     @Published var errorMessage: String?
     @Published var detailsExpanded = false
+    @Published var cloudCostUSD: Double = 0
 
     var estimatedTotal: TimeInterval?
 
-    init(source: PairingSnapshot, quality: AlignmentQuality) {
+    init(source: PairingSnapshot, quality: AlignmentQuality, location: AlignmentLocation = .onMac, spendingLimitUSD: Double = 5) {
         self.source = source
         self.quality = quality
+        self.location = location
+        self.spendingLimitUSD = spendingLimitUSD
     }
 
     var title: String { source.title }

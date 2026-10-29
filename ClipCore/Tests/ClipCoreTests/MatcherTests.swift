@@ -56,6 +56,22 @@ final class MatcherTests: XCTestCase {
         assertValidTimings(result.sentences)
     }
 
+    func testDoesNotInterpolateShortSentenceAcrossImplausiblyLongGap() {
+        let sentences = [
+            epubSentence(0, "Alpha bravo charlie delta echo foxtrot.", paragraph: 0),
+            epubSentence(1, "A tiny missing aside.", paragraph: 1),
+            epubSentence(2, "Golf hotel india juliet kilo lima.", paragraph: 2),
+        ]
+        let leading = timedWords("Alpha bravo charlie delta echo foxtrot", step: 0.5)
+        let trailing = timedWords("Golf hotel india juliet kilo lima", step: 0.5).map {
+            TranscriptWord(w: $0.w, s: $0.s + 25, e: $0.e + 25)
+        }
+
+        let result = Matcher.align(sentences: sentences, transcript: leading + trailing)
+
+        XCTAssertFalse(result.sentences[1].isTimed)
+    }
+
     func testEmptyTranscriptLeavesEverySentenceUntimed() {
         let result = Matcher.align(
             sentences: [epubSentence(0, "Call me Ishmael.", paragraph: 0)],
@@ -88,6 +104,122 @@ final class MatcherTests: XCTestCase {
         assertValidTimings(result.sentences)
     }
 
+    func testRejectsLowConfidenceAccidentalSentenceMatch() {
+        let sentence = epubSentence(0, "alpha bravo charlie delta echo foxtrot golf hotel", paragraph: 0)
+        let transcript = timedWords("alpha delta hotel", step: 0.5)
+
+        let result = Matcher.align(sentences: [sentence], transcript: transcript)
+
+        XCTAssertFalse(result.sentences[0].isTimed)
+        XCTAssertEqual(result.sentences[0].conf, 0)
+        XCTAssertEqual(result.sentenceCoverage, 0)
+    }
+
+    func testSentenceOverlapCannotInvertShortWordsOrMoveSentenceStartPastItsEnd() {
+        let sentences = [
+            epubSentence(0, "Alpha bravo.", paragraph: 0),
+            epubSentence(1, "Charlie delta echo.", paragraph: 1),
+        ]
+        for previousEnd in [2.0, 4.0] {
+            let transcript = [
+                TranscriptWord(w: "Alpha", s: 0, e: 1),
+                TranscriptWord(w: "bravo", s: 1, e: previousEnd),
+                TranscriptWord(w: "Charlie", s: 1.5, e: 1.6),
+                TranscriptWord(w: "delta", s: 1.6, e: 1.7),
+                TranscriptWord(w: "echo", s: 1.7, e: 2.2),
+            ]
+            let result = Matcher.align(sentences: sentences, transcript: transcript)
+            XCTAssertTrue(result.sentences.allSatisfy(\.isTimed))
+            assertValidTimings(result.sentences)
+        }
+    }
+
+    func testSentenceIncludesEarlierWordThatEndsAfterItsLastWord() throws {
+        let result = Matcher.align(
+            sentences: [epubSentence(0, "Alpha bravo charlie.", paragraph: 0)],
+            transcript: [
+                TranscriptWord(w: "Alpha", s: 10, e: 11),
+                TranscriptWord(w: "bravo", s: 11, e: 13),
+                TranscriptWord(w: "charlie", s: 11.5, e: 12),
+            ]
+        )
+
+        XCTAssertEqual(result.sentences[0].endS, 13)
+        XCTAssertEqual(result.sentences[0].words?[1].e, 13)
+        try validateSync(result)
+    }
+
+    func testNestedWordCannotHideAnImplausiblyLongSentence() {
+        let result = Matcher.align(
+            sentences: [epubSentence(0, "Alpha bravo charlie.", paragraph: 0)],
+            transcript: [
+                TranscriptWord(w: "Alpha", s: 0, e: 1),
+                TranscriptWord(w: "bravo", s: 1, e: 100),
+                TranscriptWord(w: "charlie", s: 1.5, e: 2),
+            ]
+        )
+
+        XCTAssertFalse(result.sentences[0].isTimed)
+        XCTAssertNil(result.sentences[0].words)
+        XCTAssertEqual(result.coverage, 0)
+    }
+
+    func testMalformedWordTimingsDoNotInvalidateUsableSentences() throws {
+        let sentences = [
+            epubSentence(0, "Alpha bravo charlie.", paragraph: 0),
+            epubSentence(1, "Delta echo foxtrot golf hotel.", paragraph: 1),
+        ]
+        let validWords = [
+            TranscriptWord(w: "Alpha", s: 0, e: 1),
+            TranscriptWord(w: "bravo", s: 1, e: 2),
+            TranscriptWord(w: "charlie", s: 2, e: 3),
+            TranscriptWord(w: "Delta", s: 4, e: 5),
+            TranscriptWord(w: "foxtrot", s: 6, e: 7),
+            TranscriptWord(w: "golf", s: 7, e: 8),
+            TranscriptWord(w: "hotel", s: 8, e: 9),
+        ]
+        for badWord in [
+            TranscriptWord(w: "echo", s: 5, e: 4),
+            TranscriptWord(w: "echo", s: -1, e: 6),
+            TranscriptWord(w: "echo", s: .nan, e: 7),
+            TranscriptWord(w: "echo", s: 5, e: .infinity),
+        ] {
+            let result = Matcher.align(sentences: sentences, transcript: validWords + [badWord])
+            XCTAssertTrue(result.sentences.allSatisfy(\.isTimed))
+            try validateSync(result)
+        }
+    }
+
+    func testRejectsImplausiblyLongMatchAndDetectsTruncatedSource() {
+        let cleanSentences = makeSentences(count: 20)
+        let corrupt = epubSentence(
+            20,
+            "This program cannot be run in DOS mode with embedded executable resources.",
+            paragraph: 20
+        )
+        var transcript: [TranscriptWord] = []
+        var clock = 0.0
+        for sentence in cleanSentences {
+            for word in words(sentence.text) {
+                transcript.append(TranscriptWord(w: word, s: clock, e: clock + 0.2))
+                clock += 0.25
+            }
+        }
+        for (index, word) in words(corrupt.text).enumerated() {
+            let start = 3_600 + Double(index) * 600
+            transcript.append(TranscriptWord(w: word, s: start, e: start + 0.2))
+        }
+
+        let result = Matcher.align(sentences: cleanSentences + [corrupt], transcript: transcript)
+
+        XCTAssertTrue(result.sentences[0..<20].allSatisfy(\.isTimed))
+        XCTAssertFalse(result.sentences[20].isTimed)
+        XCTAssertEqual(result.sentenceCoverage, 20.0 / 21.0, accuracy: 0.0001)
+        XCTAssertLessThan(result.audioCoverage, 0.1)
+        XCTAssertEqual(result.coverage, result.audioCoverage, accuracy: 0.0001)
+        XCTAssertTrue(result.sourceAppearsIncomplete)
+    }
+
     private func makeSentences(count: Int) -> [EPUBSentence] {
         let vocabulary = ["albatross", "lantern", "harbor", "compass", "whaleboat", "horizon", "starboard", "weather", "current", "island", "captain", "sailor"]
         return (0..<count).map { i in
@@ -116,6 +248,19 @@ final class MatcherTests: XCTestCase {
         string.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
 
+    private func validateSync(_ result: MatchResult) throws {
+        let sync = ClipBookSync(
+            book: SyncBook(
+                title: "Timing regression", author: "", durationS: 120,
+                aligner: AlignerInfo(engine: "test", model: "test", coverage: result.coverage, created: "2026-10-27")
+            ),
+            audio: [SyncAudio(file: "audio/test.m4a", offsetS: 0, durationS: 120)],
+            chapters: [SyncChapter(title: "Chapter", startS: 0, epubHref: "chapter.xhtml")],
+            sentences: result.sentences
+        )
+        try sync.validate()
+    }
+
     private func assertValidTimings(_ sentences: [SyncSentence], file: StaticString = #filePath, line: UInt = #line) {
         var previousStart = -Double.infinity
         var previousEnd = -Double.infinity
@@ -131,6 +276,8 @@ final class MatcherTests: XCTestCase {
                 XCTAssertTrue(word.e.isFinite, file: file, line: line)
                 XCTAssertGreaterThanOrEqual(word.s, 0, file: file, line: line)
                 XCTAssertGreaterThanOrEqual(word.e, word.s, file: file, line: line)
+                XCTAssertGreaterThanOrEqual(word.s + 0.25, start, file: file, line: line)
+                XCTAssertLessThanOrEqual(word.e, end + 0.25, file: file, line: line)
             }
             previousStart = start
             previousEnd = end

@@ -31,8 +31,8 @@ struct SmallCapsLabel: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(ClipTypography.semibold(12))
-            .tracking(1.2)
+            .font(ClipDesign.labelFont(size: 11))
+            .tracking(1.25)
             .foregroundStyle(color)
     }
 }
@@ -47,15 +47,15 @@ struct DurationStampPicker: View {
                     selection = duration
                 } label: {
                     Text("\(duration)s")
-                        .font(ClipTypography.semibold(15))
+                        .font(ClipDesign.labelFont(size: 14, weight: .medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .foregroundStyle(selection == duration ? ClipDesign.paper : ClipDesign.ink)
-                        .background(selection == duration ? ClipDesign.terracotta : ClipDesign.surface)
+                        .background(selection == duration ? ClipDesign.accent : ClipDesign.paperStrong)
                         .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
                         .overlay {
                             RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
-                                .stroke(selection == duration ? ClipDesign.terracotta : ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
+                                .stroke(selection == duration ? ClipDesign.accent : ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
                         }
                 }
                 .buttonStyle(.plain)
@@ -75,8 +75,7 @@ struct ClipPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(ClipTypography.semibold(18))
-                .tracking(0.3)
+                .font(ClipDesign.labelFont(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .foregroundStyle(ClipDesign.paper)
@@ -117,8 +116,8 @@ struct StampCover: View {
 
             if caption {
                 Text(book.title.uppercased())
-                    .font(ClipTypography.semibold(10))
-                    .tracking(0.8)
+                    .font(ClipDesign.labelFont(size: 10))
+                    .tracking(1)
                     .foregroundStyle(ClipDesign.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)

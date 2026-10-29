@@ -3,6 +3,8 @@ import Foundation
 public enum ClipShared {
     public static let appGroupIdentifier = "group.com.michael.clip"
     public static let iCloudContainerIdentifier = "iCloud.com.michael.clip"
+    public static let supportURL = URL(string: "https://mhdempsey.github.io/clip/support/")!
+    public static let privacyPolicyURL = URL(string: "https://mhdempsey.github.io/clip/privacy/")!
     public static let supportedClipWindowSeconds = [10, 15, 20, 30]
     public static let defaultClipWindowSeconds = 15
     public static let playbackRateRange = 1.0...3.0
@@ -20,11 +22,13 @@ public enum ClipShared {
         public static let clipCommandSequence = "clipCommandSequence"
         public static let handledClipCommandSequence = "handledClipCommandSequence"
         public static let importDates = "clipbookImportDates"
+        public static let playbackSnapshot = "clipPlaybackSnapshot"
     }
 
     public enum DarwinNotification {
         public static let playbackCommand = "com.michael.clip.playback-command"
         public static let clipCommand = "com.michael.clip.clip-command"
+        public static let clipSaved = "com.michael.clip.clip-saved"
     }
 
     public static func validatedClipWindow(_ value: Int) -> Int {

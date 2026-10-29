@@ -4,10 +4,51 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum ClipFont {
-    static func regular(_ size: CGFloat) -> Font { .custom("EB Garamond", size: size) }
-    static func medium(_ size: CGFloat) -> Font { .custom("EB Garamond Medium", size: size) }
-    static func semibold(_ size: CGFloat) -> Font { .custom("EB Garamond SemiBold", size: size) }
-    static func italic(_ size: CGFloat) -> Font { .custom("EB Garamond", size: size).italic() }
+    static func regular(_ size: CGFloat) -> Font { .custom("EBGaramond-Regular", size: size) }
+    static func medium(_ size: CGFloat) -> Font { .custom("EBGaramond-Medium", size: size) }
+    static func semibold(_ size: CGFloat) -> Font { .custom("EBGaramond-SemiBold", size: size) }
+    static func italic(_ size: CGFloat) -> Font { .custom("EBGaramond-Italic", size: size) }
+    static func handwritten(_ size: CGFloat) -> Font { .custom("Bradley Hand", size: size) }
+}
+
+struct ClipWordmark: View {
+    var size: CGFloat = 42
+
+    var body: some View {
+        Text("Clip")
+            .font(ClipFont.handwritten(size))
+            .foregroundStyle(ClipDesign.accent)
+            .rotationEffect(.degrees(-1.5))
+            .overlay(alignment: .bottom) {
+                ScribbleUnderline()
+                    .stroke(
+                        ClipDesign.bloom,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(height: 6)
+                    .offset(y: 3)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct ScribbleUnderline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + 2, y: rect.midY + 1))
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.midY - 1),
+            control1: CGPoint(x: rect.width * 0.18, y: rect.minY),
+            control2: CGPoint(x: rect.width * 0.34, y: rect.maxY)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX - 1, y: rect.midY),
+            control1: CGPoint(x: rect.width * 0.66, y: rect.minY),
+            control2: CGPoint(x: rect.width * 0.84, y: rect.maxY)
+        )
+        return path
+    }
 }
 
 struct SmallCapsLabel: View {
@@ -16,8 +57,8 @@ struct SmallCapsLabel: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(ClipFont.semibold(12))
-            .tracking(1.15)
+            .font(ClipDesign.labelFont(size: 11))
+            .tracking(1.25)
             .foregroundStyle(color)
     }
 }
@@ -26,7 +67,7 @@ struct Fleuron: View {
     var body: some View {
         Text("❦")
             .font(ClipFont.regular(24))
-            .foregroundStyle(ClipDesign.inkSecondary)
+            .foregroundStyle(ClipDesign.marigold)
             .accessibilityHidden(true)
     }
 }
@@ -92,6 +133,7 @@ struct StampCover: View {
             .mask {
                 PerforatedStampShape().fill(style: FillStyle(eoFill: true))
             }
+            .shadow(color: ClipDesign.shadow, radius: 10, y: 6)
 
             if let caption {
                 SmallCapsLabel(text: caption)
@@ -128,8 +170,7 @@ struct PaperButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ClipFont.semibold(13))
-            .tracking(0.55)
+            .font(ClipDesign.labelFont(size: 13, weight: .medium))
             .foregroundStyle(foreground(configuration))
             .padding(.horizontal, role == .quiet ? 7 : 15)
             .padding(.vertical, role == .quiet ? 5 : 9)
@@ -138,7 +179,7 @@ struct PaperButtonStyle: ButtonStyle {
             .overlay {
                 if role == .secondary {
                     RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
-                        .stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
+                        .stroke(ClipDesign.hairlineStrong, lineWidth: ClipDesign.hairlineWidth)
                 }
             }
             .contentShape(Rectangle())
@@ -155,9 +196,9 @@ struct PaperButtonStyle: ButtonStyle {
     private func background(_ configuration: Configuration) -> some View {
         switch role {
         case .primary:
-            (configuration.isPressed ? ClipDesign.terracottaPressed : ClipDesign.terracotta)
+            (configuration.isPressed ? ClipDesign.accentPressed : ClipDesign.accent)
         case .secondary:
-            (configuration.isPressed ? ClipDesign.hairline.opacity(0.55) : ClipDesign.surface)
+            (configuration.isPressed ? ClipDesign.surfaceSoft : ClipDesign.paperStrong)
         case .quiet:
             Color.clear
         }
@@ -172,7 +213,7 @@ struct PaperTextFieldStyle: TextFieldStyle {
             .foregroundStyle(ClipDesign.ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(ClipDesign.paper.opacity(0.62))
+            .background(ClipDesign.paperStrong)
             .clipShape(RoundedRectangle(cornerRadius: ClipDesign.controlRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: ClipDesign.controlRadius)
@@ -199,11 +240,12 @@ struct AudioReorderDropDelegate: DropDelegate {
 extension View {
     func clipCard() -> some View {
         padding(22)
-            .background(ClipDesign.surface)
+            .background(ClipDesign.paperStrong)
             .clipShape(RoundedRectangle(cornerRadius: ClipDesign.cardRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: ClipDesign.cardRadius)
                     .stroke(ClipDesign.hairline, lineWidth: ClipDesign.hairlineWidth)
             }
+            .shadow(color: ClipDesign.shadow, radius: 18, y: 10)
     }
 }

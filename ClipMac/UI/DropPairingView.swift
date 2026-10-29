@@ -19,16 +19,33 @@ struct DropPairingView: View {
                 pairingCard
             }
         }
+        .disabled(model.isPreparingCloud)
+        .sheet(item: $model.cloudConfirmation) { request in
+            CloudAlignmentConfirmationView(model: model, request: request)
+        }
     }
 
     private var dropZone: some View {
-        VStack(spacing: 13) {
+        VStack(spacing: 12) {
             Fleuron()
+            Text("Drop an ebook and its matching audiobook.")
+                .font(ClipFont.medium(25))
+                .foregroundStyle(ClipDesign.ink)
+                .multilineTextAlignment(.center)
+            Text("Clip syncs them for listening and reading on your iPhone. Then say “Clip that” or tap Clip to send the passage to Readwise, ready for Marginalia.")
+                .font(ClipFont.regular(17))
+                .foregroundStyle(ClipDesign.inkSecondary)
+                .multilineTextAlignment(.center)
             SmallCapsLabel(text: draft.pairStatus, color: isDropTargeted ? ClipDesign.terracotta : ClipDesign.ink)
                 .multilineTextAlignment(.center)
+                .padding(.top, 4)
             Button("Choose files…") { model.chooseFiles() }
                 .buttonStyle(PaperButtonStyle(role: .secondary))
                 .accessibilityIdentifier("choose-files")
+            Text("EPUB + MP3, M4A, or M4B")
+                .font(ClipFont.handwritten(15))
+                .foregroundStyle(ClipDesign.bloom)
+                .rotationEffect(.degrees(-1))
             if let message = draft.inlineMessage {
                 Text(message)
                     .font(ClipFont.italic(15))
@@ -37,7 +54,7 @@ struct DropPairingView: View {
                     .accessibilityIdentifier("pairing-feedback")
             }
         }
-        .frame(maxWidth: .infinity, minHeight: draft.canAlign ? 130 : 210)
+        .frame(maxWidth: .infinity, minHeight: draft.canAlign ? 180 : 270)
         .padding(24)
         .background(ClipDesign.surface)
         .clipShape(RoundedRectangle(cornerRadius: ClipDesign.cardRadius))
@@ -104,15 +121,29 @@ struct DropPairingView: View {
                 }
 
                 HStack {
+                    Picker("Transcription", selection: $model.alignmentLocation) {
+                        ForEach(AlignmentLocation.allCases) { location in
+                            Text(location.title).tag(location)
+                        }
+                    }
+                    .fixedSize()
+                    .accessibilityIdentifier("pairing-alignment-location")
+                    SettingsLink { Text("Settings…") }
+                        .buttonStyle(PaperButtonStyle(role: .quiet))
+                        .accessibilityIdentifier("pairing-settings")
+                    Spacer()
+                }
+
+                HStack {
                     if draft.isReadingMetadata {
                         Text("Reading the cover…")
                             .font(ClipFont.italic(14))
                             .foregroundStyle(ClipDesign.inkSecondary)
                     }
                     Spacer()
-                    Button("Align") { model.enqueueAlignment() }
+                    Button(model.isPreparingCloud ? "Checking audio…" : (model.alignmentLocation == .openRouter ? "Review cloud alignment…" : "Align")) { model.enqueueAlignment() }
                         .buttonStyle(PaperButtonStyle(role: .primary))
-                        .disabled(!draft.canAlign)
+                        .disabled(!draft.canAlign || model.isPreparingCloud)
                         .opacity(draft.canAlign ? 1 : 0.45)
                         .accessibilityIdentifier("align-book")
                 }
@@ -175,3 +206,40 @@ struct DropPairingView: View {
     }
 }
 
+private struct CloudAlignmentConfirmationView: View {
+    @ObservedObject var model: ClipMacModel
+    let request: CloudAlignmentRequest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Align with OpenRouter")
+                .font(ClipFont.medium(28))
+            Text(request.source.title)
+                .font(ClipFont.semibold(19))
+            Text("Estimated transcription: \(request.estimatedCost)")
+                .font(ClipFont.medium(22))
+                .accessibilityIdentifier("cloud-cost-estimate")
+            Text("Before cache savings, based on published provider rates. OpenRouter chooses the provider; actual cost and speed vary.")
+                .font(ClipFont.regular(15))
+            Text("Your audiobook audio will be sent to OpenRouter’s transcription providers. The EPUB and matching stay on this Mac. Charges use your existing OpenRouter credits.")
+                .font(ClipFont.regular(16))
+            Text("Spending limit this run: \(request.spendingLimitUSD.formatted(.currency(code: "USD"))). Clip checks between upload batches; a final batch can put the total slightly over. Completed chunks are saved for retries.")
+                .font(ClipFont.italic(14))
+                .foregroundStyle(ClipDesign.inkSecondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { model.cloudConfirmation = nil }
+                    .buttonStyle(PaperButtonStyle(role: .quiet))
+                    .keyboardShortcut(.cancelAction)
+                Button("Upload audio and align") { model.confirmCloudAlignment() }
+                    .buttonStyle(PaperButtonStyle(role: .primary))
+                    .accessibilityIdentifier("confirm-cloud-alignment")
+            }
+        }
+        .foregroundStyle(ClipDesign.ink)
+        .padding(28)
+        .frame(width: 540)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(ClipDesign.paper)
+    }
+}

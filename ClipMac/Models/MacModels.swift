@@ -1,4 +1,13 @@
+import ClipCore
 import Foundation
+
+enum AlignmentLocation: String, CaseIterable, Identifiable {
+    case onMac
+    case openRouter
+
+    var id: String { rawValue }
+    var title: String { self == .onMac ? "On this Mac" : "OpenRouter cloud" }
+}
 
 enum AlignmentQuality: String, CaseIterable, Identifiable, Codable {
     case standard
@@ -62,6 +71,22 @@ struct PairingSnapshot {
     let coverData: Data?
 }
 
+struct CloudAlignmentRequest: Identifiable {
+    let id = UUID()
+    let source: PairingSnapshot
+    let quality: AlignmentQuality
+    let spendingLimitUSD: Double
+    let retryingJobID: UUID?
+
+    var estimatedCost: String {
+        let seconds = source.audio.reduce(0) { total, audio in
+            total + OpenRouterAudioChunk.plan(duration: audio.duration ?? 0).reduce(0) { $0 + $1.uploadDuration }
+        }
+        let rates = OpenRouterTranscriptionClient.estimatedRatesUSD
+        return "\(ClipFormatting.usd(seconds * rates.lowerBound))–\(ClipFormatting.usd(seconds * rates.upperBound))"
+    }
+}
+
 @MainActor
 final class PairingDraft: ObservableObject {
     @Published var epubURL: URL?
@@ -79,10 +104,10 @@ final class PairingDraft: ObservableObject {
 
     var pairStatus: String {
         switch (epubURL != nil, audio.isEmpty) {
-        case (false, true): "Drop a book and its audiobook."
-        case (true, true): "Got the book — now the audio."
-        case (false, false): "Got the audio — now the book."
-        case (true, false): "A good pair. Check the order, then align."
+        case (false, true): "Step 1 of 4 · Add both files"
+        case (true, true): "Ebook added · Now add the audiobook"
+        case (false, false): "Audiobook added · Now add the ebook"
+        case (true, false): "Step 2 of 4 · Check the order, then click Align"
         }
     }
 
@@ -160,6 +185,8 @@ final class AlignmentJob: ObservableObject, Identifiable {
     let id = UUID()
     let source: PairingSnapshot
     let quality: AlignmentQuality
+    let location: AlignmentLocation
+    let spendingLimitUSD: Double
 
     @Published var stage: AlignmentStage = .waiting
     @Published var progress: Double = 0
@@ -169,12 +196,15 @@ final class AlignmentJob: ObservableObject, Identifiable {
     @Published var completed: CompletedAlignment?
     @Published var errorMessage: String?
     @Published var detailsExpanded = false
+    @Published var cloudCostUSD: Double = 0
 
     var estimatedTotal: TimeInterval?
 
-    init(source: PairingSnapshot, quality: AlignmentQuality) {
+    init(source: PairingSnapshot, quality: AlignmentQuality, location: AlignmentLocation = .onMac, spendingLimitUSD: Double = 5) {
         self.source = source
         self.quality = quality
+        self.location = location
+        self.spendingLimitUSD = spendingLimitUSD
     }
 
     var title: String { source.title }
@@ -205,6 +235,7 @@ enum MacAppError: LocalizedError {
     case missingPair
     case unreadableAudio(String)
     case noTranscript(String)
+    case incompleteBookText(Double)
     case malformedBundle
 
     var errorDescription: String? {
@@ -217,6 +248,8 @@ enum MacAppError: LocalizedError {
             "Clip couldn’t read the duration of \(name)."
         case let .noTranscript(name):
             "Clip couldn’t hear any spoken words in \(name)."
+        case let .incompleteBookText(coverage):
+            "Clip found reliable ebook text for only \(Int((coverage * 100).rounded()))% of the audio. The EPUB may be incomplete or damaged; try another copy."
         case .malformedBundle:
             "This Clip book is missing some of its information."
         }

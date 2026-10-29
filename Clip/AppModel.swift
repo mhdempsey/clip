@@ -26,6 +26,14 @@ final class AppModel: ObservableObject {
         settings = ClipSettings()
         importer.onImport = { [weak self] in self?.reloadBooks() }
         reloadBooks()
+#if DEBUG
+        if let fixture = try? ClipUITestFixture.installIfRequested(database: database) {
+            reloadBooks()
+            selectedTab = ProcessInfo.processInfo.arguments.contains("--ui-test-library-fixture") ? .library : .player
+            let engine = self.player
+            playerLoadTask = Task { await engine.load(fixture, autoplay: false) }
+        }
+#endif
     }
 
     func reloadBooks() {
@@ -38,6 +46,13 @@ final class AppModel: ObservableObject {
         selectedTab = .player
         playerLoadTask?.cancel()
         playerLoadTask = Task { await player.load(book, autoplay: false) }
+    }
+
+    func setRead(_ book: BookRecord, isRead: Bool) {
+        do {
+            try database.setRead(bookID: book.id, isRead: isRead)
+            reloadBooks()
+        } catch { alertMessage = "Couldn’t update this book: \(error.localizedDescription)" }
     }
 
     func importBook(from url: URL) async {

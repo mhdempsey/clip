@@ -8,6 +8,7 @@ enum TranscriptionUpdate: Sendable {
     case modelDownload(fraction: Double)
     case modelLoading
     case listening(fraction: Double, cacheHit: Bool)
+    case cloudSpending(Double)
 }
 
 actor WhisperTranscriber {

@@ -5,6 +5,96 @@ import XCTest
 
 @MainActor
 final class PlayerEngineTests: XCTestCase {
+    func testPendingSeekRejectsTransientZeroTimeAndOutdatedCompletions() async throws {
+        let fixture = try makeFixture(includeAudio: true, duration: 240)
+        let suiteName = "PlayerEngineTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let queue = DelayedSeekPlayer()
+        let engine = PlayerEngine(database: fixture.database, defaults: defaults, player: queue)
+        await engine.load(fixture.book)
+        engine.seek(to: 90)
+        queue.reportTransientTime()
+        await Task.yield()
+        XCTAssertEqual(engine.globalTime, 90, "A new item reporting zero must not overwrite a pending target")
+
+        engine.skip(by: 15)
+        queue.completeSeek(at: 0)
+        queue.reportTransientTime()
+        await Task.yield()
+        XCTAssertEqual(engine.globalTime, 105, "Completing an older seek must not release the latest seek's position")
+
+        engine.skip(by: -15)
+        queue.completeSeek(at: 1)
+        queue.reportTransientTime()
+        await Task.yield()
+        XCTAssertEqual(engine.globalTime, 90)
+    }
+
+    func testRapidSkipsAccumulateWhileAudioSeeksAreInFlight() async throws {
+        let fixture = try makeFixture(includeAudio: true, duration: 240)
+        let suiteName = "PlayerEngineTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let queue = AVQueuePlayer()
+        let engine = PlayerEngine(database: fixture.database, defaults: defaults, player: queue)
+        await engine.load(fixture.book)
+        engine.seek(to: 90)
+        let item = queue.currentItem
+        for delta in [15.0, 15, 15, -15, -15, 15, 15, -15] {
+            let expected = engine.globalTime + delta
+            engine.skip(by: delta)
+            await Task.yield()
+            XCTAssertEqual(engine.globalTime, expected, accuracy: 0.1, "A pending seek must not reset the next skip's starting point")
+            XCTAssertTrue(queue.currentItem === item, "Skipping within an audio file must reuse the current queue")
+        }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(engine.globalTime, 120, accuracy: 0.1)
+        XCTAssertEqual(queue.currentTime().seconds, 120, accuracy: 0.1)
+        XCTAssertFalse(engine.isPlaying)
+    }
+
+    func testRapidSkipsAcrossAudioFilesKeepPlaybackAndRespectBookBoundaries() async throws {
+        let fixture = try makeFixture(includeAudio: true, duration: 240, segments: 2)
+        let suiteName = "PlayerEngineTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let queue = AVQueuePlayer()
+        let engine = PlayerEngine(database: fixture.database, defaults: defaults, player: queue)
+        await engine.load(fixture.book)
+        engine.seek(to: 90)
+        engine.play()
+        for delta in [15.0, 15, 15, -15, -15, -15, 15, 15, 15, 15] {
+            let target = engine.globalTime + delta
+            engine.skip(by: delta)
+            XCTAssertEqual(engine.globalTime, target, accuracy: 0.1)
+            try await Task.sleep(for: .milliseconds(80))
+            XCTAssertTrue(engine.isPlaying, "Seeking and buffering must preserve the request to keep playing")
+        }
+        engine.pause()
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(engine.globalTime, 150, accuracy: 3)
+        XCTAssertEqual(queue.currentTime().seconds, engine.globalTime - 120, accuracy: 1)
+        XCTAssertFalse(engine.isPlaying, "An in-flight seek must not undo a later pause")
+
+        for _ in 0..<20 { engine.skip(by: 15) }
+        XCTAssertEqual(engine.globalTime, 240)
+        for _ in 0..<20 { engine.skip(by: -15) }
+        XCTAssertEqual(engine.globalTime, 0)
+    }
+
     func testCompleteLocalBundleLoadsAndPlays() async throws {
         let fixture = try makeFixture(includeAudio: true)
         defer {
@@ -104,7 +194,98 @@ final class PlayerEngineTests: XCTestCase {
         XCTAssertTrue(engine.playbackError?.contains("audio files are missing") == true)
     }
 
-    private func makeFixture(includeAudio: Bool) throws -> (
+    func testUbiquitousBundleDownloadsSyncMetadataBeforeLoading() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        let syncURL = fixture.book.bundleFileURL.appendingPathComponent("sync.json")
+        let syncData = try Data(contentsOf: syncURL)
+        try FileManager.default.removeItem(at: syncURL)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let fileManager = UbiquitousBundleFileManager(
+            bundleURL: fixture.book.bundleFileURL,
+            syncURL: syncURL,
+            syncData: syncData
+        )
+        let resourceLoader = BundleResourceLoader(
+            fileManager: fileManager,
+            pollInterval: .milliseconds(1),
+            cloudRetryCount: 2
+        )
+        let engine = PlayerEngine(database: fixture.database, resourceLoader: resourceLoader)
+
+        await engine.load(fixture.book)
+
+        XCTAssertEqual(engine.currentBook?.id, fixture.book.id)
+        XCTAssertNil(engine.playbackError)
+        XCTAssertTrue(fileManager.requestedURLs.contains(fixture.book.bundleFileURL))
+        XCTAssertTrue(fileManager.requestedURLs.contains(syncURL))
+    }
+
+    func testUbiquitousBundleReportsSyncMetadataDownloadTimeout() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        let syncURL = fixture.book.bundleFileURL.appendingPathComponent("sync.json")
+        let syncData = try Data(contentsOf: syncURL)
+        try FileManager.default.removeItem(at: syncURL)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let fileManager = UbiquitousBundleFileManager(
+            bundleURL: fixture.book.bundleFileURL,
+            syncURL: syncURL,
+            syncData: syncData,
+            completesDownload: false
+        )
+        let resourceLoader = BundleResourceLoader(
+            fileManager: fileManager,
+            pollInterval: .milliseconds(1),
+            cloudRetryCount: 1
+        )
+        let engine = PlayerEngine(database: fixture.database, resourceLoader: resourceLoader)
+
+        await engine.load(fixture.book)
+
+        XCTAssertNil(engine.currentBook)
+        XCTAssertTrue(engine.playbackError?.contains("couldn’t finish downloading sync.json from iCloud") == true)
+    }
+
+    func testChapterTitlesComeFromPlaybackManifest() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        let engine = PlayerEngine(database: fixture.database)
+
+        await engine.load(fixture.book)
+
+        XCTAssertEqual(engine.currentChapterTitle, "Opening")
+        XCTAssertEqual(engine.chapterTitle(at: 0), "Opening")
+        XCTAssertEqual(engine.chapterTitle(at: 1), "Second Chapter")
+        XCTAssertEqual(engine.chapterTitle(at: 2), "Chapter 3")
+
+        engine.seek(to: 1.25)
+        XCTAssertEqual(engine.currentChapterTitle, "Second Chapter")
+    }
+
+    func testPausedSeekSavesReadingProgressImmediatelyWithoutStartingPlayback() async throws {
+        let fixture = try makeFixture(includeAudio: true)
+        defer {
+            try? fixture.database.writer.close()
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        try fixture.database.save(book: fixture.book, sentences: [])
+        let engine = PlayerEngine(database: fixture.database)
+        await engine.load(fixture.book)
+        engine.seek(to: 1.25)
+        XCTAssertEqual(engine.globalTime, 1.25)
+        XCTAssertFalse(engine.isPlaying)
+        XCTAssertEqual(try fixture.database.book(id: fixture.book.id)?.positionS, 1.25)
+    }
+
+    private func makeFixture(includeAudio: Bool, duration: Double = 2, segments: Int = 1) throws -> (
         root: URL,
         database: ClipDatabase,
         book: BookRecord
@@ -116,9 +297,16 @@ final class PlayerEngineTests: XCTestCase {
         try FileManager.default.createDirectory(at: audioDirectory, withIntermediateDirectories: true)
 
         if includeAudio {
-            try writeSilentAudio(to: audioDirectory.appendingPathComponent("part.caf"))
+            try writeSilentAudio(to: audioDirectory.appendingPathComponent("part.caf"), duration: duration / Double(segments))
         }
-        let manifest = #"{"audio":[{"file":"audio/part.caf","offset_s":0,"duration_s":2}],"chapters":[{"title":"Test Chapter","start_s":0}]}"#
+        let audio = (0..<segments).map { index in
+            """
+            {"file":"audio/part.caf","offset_s":\(Double(index) * duration / Double(segments)),"duration_s":\(duration / Double(segments))}
+            """
+        }.joined(separator: ",")
+        let manifest = """
+        {"audio":[\(audio)],"chapters":[{"title":"Opening","start_s":0},{"title":"Second Chapter","start_s":1}]}
+        """
         try Data(manifest.utf8).write(to: bundle.appendingPathComponent("sync.json"))
 
         let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))
@@ -127,7 +315,7 @@ final class PlayerEngineTests: XCTestCase {
             title: "Test Book",
             author: "Test Author",
             bundleURL: bundle.path,
-            durationS: 2,
+            durationS: duration,
             coverPath: nil,
             positionS: 0,
             addedAt: Date(),
@@ -136,14 +324,64 @@ final class PlayerEngineTests: XCTestCase {
         return (root, database, book)
     }
 
-    private func writeSilentAudio(to url: URL) throws {
+    private func writeSilentAudio(to url: URL, duration: Double) throws {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
-        let frameCount = AVAudioFrameCount(format.sampleRate * 2)
+        let frameCount = AVAudioFrameCount(format.sampleRate)
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
         buffer.frameLength = frameCount
         buffer.floatChannelData?[0].initialize(repeating: 0, count: Int(frameCount))
 
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        try file.write(from: buffer)
+        for _ in 0..<Int(duration) { try file.write(from: buffer) }
+    }
+}
+
+private final class DelayedSeekPlayer: AVQueuePlayer {
+    private var periodicCallback: (@Sendable (CMTime) -> Void)?
+    private var completions: [@Sendable (Bool) -> Void] = []
+
+    override func addPeriodicTimeObserver(forInterval interval: CMTime, queue: DispatchQueue?, using block: @escaping @Sendable (CMTime) -> Void) -> Any {
+        periodicCallback = block
+        return NSObject()
+    }
+
+    override func removeTimeObserver(_ observer: Any) {}
+
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime) {}
+
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime, completionHandler: @escaping @Sendable (Bool) -> Void) {
+        completions.append(completionHandler)
+    }
+
+    func reportTransientTime() { periodicCallback?(.zero) }
+    func completeSeek(at index: Int) {
+        if completions.indices.contains(index) { completions[index](true) }
+    }
+}
+
+private final class UbiquitousBundleFileManager: FileManager {
+    let bundleURL: URL
+    let syncURL: URL
+    let syncData: Data
+    let completesDownload: Bool
+    private(set) var requestedURLs: [URL] = []
+
+    init(bundleURL: URL, syncURL: URL, syncData: Data, completesDownload: Bool = true) {
+        self.bundleURL = bundleURL
+        self.syncURL = syncURL
+        self.syncData = syncData
+        self.completesDownload = completesDownload
+        super.init()
+    }
+
+    override func isUbiquitousItem(at url: URL) -> Bool {
+        url.standardizedFileURL == bundleURL.standardizedFileURL
+    }
+
+    override func startDownloadingUbiquitousItem(at url: URL) throws {
+        requestedURLs.append(url)
+        if completesDownload, url.standardizedFileURL == bundleURL.standardizedFileURL {
+            try syncData.write(to: syncURL, options: .atomic)
+        }
     }
 }

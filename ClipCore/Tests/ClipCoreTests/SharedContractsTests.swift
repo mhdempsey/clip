@@ -2,6 +2,17 @@ import XCTest
 @testable import ClipCore
 
 final class SharedContractsTests: XCTestCase {
+    func testPublicSupportAndPrivacyURLsUsePublishedHTTPSPages() {
+        XCTAssertEqual(
+            ClipShared.supportURL.absoluteString,
+            "https://mhdempsey.github.io/clip/support/"
+        )
+        XCTAssertEqual(
+            ClipShared.privacyPolicyURL.absoluteString,
+            "https://mhdempsey.github.io/clip/privacy/"
+        )
+    }
+
     func testClipWindowValidationUsesFixedProductValues() {
         for value in [10, 15, 20, 30] {
             XCTAssertEqual(ClipShared.validatedClipWindow(value), value)

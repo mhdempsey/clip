@@ -23,6 +23,14 @@ struct ClipMacApp: App {
                 }
                 .keyboardShortcut("o")
             }
+            CommandGroup(replacing: .help) {
+                Button("Clip Support") {
+                    NSWorkspace.shared.open(ClipShared.supportURL)
+                }
+                Button("Privacy Policy") {
+                    NSWorkspace.shared.open(ClipShared.privacyPolicyURL)
+                }
+            }
         }
 
         Settings {
@@ -67,4 +75,3 @@ private enum FontRegistrar {
         }
     }
 }
-

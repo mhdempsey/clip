@@ -1,4 +1,5 @@
 import AppKit
+import ClipCore
 import Foundation
 
 private struct ShelfSyncEnvelope: Decodable {
@@ -30,13 +31,13 @@ actor ShelfService {
 
         return urls.compactMap { bundleURL in
             guard bundleURL.pathExtension.lowercased() == "clipbook" else { return nil }
-            let syncURL = bundleURL.appendingPathComponent("sync.json")
-            guard let data = try? Data(contentsOf: syncURL),
+            guard let syncURL = try? ClipBookBundle.resourceURL("sync.json", in: bundleURL),
+                  let data = try? Data(contentsOf: syncURL),
                   let envelope = try? JSONDecoder().decode(ShelfSyncEnvelope.self, from: data) else {
                 return nil
             }
             let values = try? bundleURL.resourceValues(forKeys: keys)
-            let cover = bundleURL.appendingPathComponent("cover.jpg")
+            let cover = try? ClipBookBundle.resourceURL("cover.jpg", in: bundleURL)
             return ShelfBook(
                 id: bundleURL.path,
                 title: envelope.book.title,
@@ -44,7 +45,7 @@ actor ShelfService {
                 duration: envelope.book.durationS,
                 coverage: envelope.book.aligner.coverage,
                 bundleURL: bundleURL,
-                coverURL: FileManager.default.fileExists(atPath: cover.path) ? cover : nil,
+                coverURL: cover.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil },
                 modifiedAt: values?.contentModificationDate
             )
         }.sorted {

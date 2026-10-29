@@ -3,6 +3,20 @@ import XCTest
 @testable import ClipCore
 
 final class ClipBookBundleTests: XCTestCase {
+    func testResourcePathsCannotEscapeThroughTraversalOrDirectorySymlinks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let book = root.appendingPathComponent("Book.clipbook", isDirectory: true)
+        let outside = root.appendingPathComponent("Book.clipbook-other", isDirectory: true)
+        try FileManager.default.createDirectory(at: book, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createSymbolicLink(at: book.appendingPathComponent("audio"), withDestinationURL: outside)
+        for path in ["", "/etc/passwd", "../Book.clipbook-other/track.m4a", "audio/track.m4a"] {
+            XCTAssertThrowsError(try ClipBookBundle.resourceURL(path, in: book), path)
+        }
+        XCTAssertEqual(try ClipBookBundle.resourceURL("cover.jpg", in: book).lastPathComponent, "cover.jpg")
+    }
+
     func testAudioFilesRequiringDownloadIncludesEveryMissingManifestFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

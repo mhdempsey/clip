@@ -6,6 +6,23 @@ import XCTest
 
 @MainActor
 final class BundleImporterTests: XCTestCase {
+    func testImportRejectsAudioDirectorySymlinkOutsidePackage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("Linked.clipbook", isDirectory: true)
+        let outsideAudio = root.appendingPathComponent("Private audio", isDirectory: true)
+        let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))
+        defer { try? database.writer.close(); try? FileManager.default.removeItem(at: root) }
+        try makeBundle(at: source)
+        try FileManager.default.moveItem(at: source.appendingPathComponent("audio"), to: outsideAudio)
+        try FileManager.default.createSymbolicLink(at: source.appendingPathComponent("audio"), withDestinationURL: outsideAudio)
+        let importer = BundleImporter(database: database, localBooksDirectory: root.appendingPathComponent("Imported", isDirectory: true))
+        do {
+            _ = try await importer.importLocalBundle(at: source)
+            XCTFail("An imported package must not read audio from outside its own directory")
+        } catch { }
+        XCTAssertTrue(try database.books().isEmpty)
+    }
+
     func testLocalImportCopiesBundleIntoPersistentStorageAndIndexesIt() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -77,6 +94,31 @@ final class BundleImporterTests: XCTestCase {
 
         XCTAssertEqual(clipbook["CFBundleTypeRole"] as? String, "Viewer")
         XCTAssertEqual(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool, true)
+    }
+
+    func testAppReviewDemoIsAValidImportableClipbook() async throws {
+        let sourceBundle = repositoryRoot
+            .appendingPathComponent("AppStore/ReviewAssets/Clip-Demo.clipbook", isDirectory: true)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let database = try ClipDatabase(url: root.appendingPathComponent("clip.sqlite"))
+        defer {
+            try? database.writer.close()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let importer = BundleImporter(
+            database: database,
+            localBooksDirectory: root.appendingPathComponent("Imported Books", isDirectory: true)
+        )
+
+        let imported = try await importer.importLocalBundle(at: sourceBundle)
+        let sentences = try database.sentences(bookID: imported.id)
+
+        XCTAssertEqual(imported.title, "The Sentence Worth Keeping")
+        XCTAssertEqual(imported.author, "Clip Review Fixture")
+        XCTAssertEqual(sentences.count, 6)
+        XCTAssertEqual(sentences.first?.text, "The rain moved softly across the window, and the room settled into evening.")
+        XCTAssertTrue(sentences.allSatisfy(\.isTimed))
     }
 
     private var repositoryRoot: URL {

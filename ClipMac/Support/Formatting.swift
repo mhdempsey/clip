@@ -25,6 +25,10 @@ enum ClipFormatting {
     static func coverage(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
     }
+
+    static func usd(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(value > 0 && value < 0.01 ? 4 : 2)))
+    }
 }
 
 extension Array where Element == AudioSource {

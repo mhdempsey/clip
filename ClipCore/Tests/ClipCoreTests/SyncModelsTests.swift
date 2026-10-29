@@ -91,6 +91,30 @@ final class SyncModelsTests: XCTestCase {
         XCTAssertThrowsError(try sync.validate())
     }
 
+    func testValidatorRejectsTimingsOutsideBookAndSentenceBounds() {
+        var sync = fixture()
+        sync.sentences[1].endS = 21
+        XCTAssertThrowsError(try sync.validate()) { error in
+            XCTAssertEqual(error as? SyncValidationError, .invalidTimedSentence(index: 1))
+        }
+
+        sync = fixture()
+        sync.sentences[0].words?[2].e = 2.5
+        XCTAssertThrowsError(try sync.validate()) { error in
+            XCTAssertEqual(error as? SyncValidationError, .invalidWord(sentence: 0))
+        }
+    }
+
+    func testValidatorRejectsImplausiblyLongSentenceTiming() {
+        var sync = fixture()
+        sync.sentences[1].endS = 19
+        sync.sentences[1].words?[2].e = 19
+
+        XCTAssertThrowsError(try sync.validate()) { error in
+            XCTAssertEqual(error as? SyncValidationError, .invalidTimedSentence(index: 1))
+        }
+    }
+
     func testMissingRequiredJSONFieldDoesNotDecode() throws {
         let json = #"{"version":1,"book":{"title":"Book"},"audio":[],"chapters":[],"sentences":[]}"#
         XCTAssertThrowsError(try JSONDecoder.clipSync.decode(ClipBookSync.self, from: Data(json.utf8)))

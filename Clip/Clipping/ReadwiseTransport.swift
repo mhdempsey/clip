@@ -11,9 +11,9 @@ actor ReadwiseTransport {
 
     typealias Highlight = ReadwiseHighlight
 
-    private let session: URLSession
+    private let session: URLSession?
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession? = nil) {
         self.session = session
     }
 

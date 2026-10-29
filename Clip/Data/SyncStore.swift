@@ -2,6 +2,9 @@ import Foundation
 import GRDB
 
 struct SyncStore: Sendable {
+    private static let minimumClippingConfidence = 0.5
+    private static let maximumSentenceDuration = 120.0
+    private static let maximumApproximationGap = 30.0
     let database: ClipDatabase
 
     init(database: ClipDatabase = .shared) {
@@ -20,18 +23,20 @@ struct SyncStore: Sendable {
                 db,
                 sql: """
                     SELECT chapter FROM sentence
-                    WHERE bookId = ? AND conf > 0 AND startS <= ? AND endS >= ?
+                    WHERE bookId = ? AND conf >= ? AND startS <= ? AND endS >= ?
+                      AND endS - startS <= ?
                     ORDER BY startS DESC LIMIT 1
                     """,
-                arguments: [bookId, upper, upper]
+                arguments: [bookId, Self.minimumClippingConfidence, upper, upper, Self.maximumSentenceDuration]
             ) ?? Int.fetchOne(
                 db,
                 sql: """
                     SELECT chapter FROM sentence
-                    WHERE bookId = ? AND conf > 0 AND startS <= ?
+                    WHERE bookId = ? AND conf >= ? AND startS <= ?
+                      AND endS - startS <= ?
                     ORDER BY startS DESC LIMIT 1
                     """,
-                arguments: [bookId, upper]
+                arguments: [bookId, Self.minimumClippingConfidence, upper, Self.maximumSentenceDuration]
             )
 
             guard let chapter else { return [] }
@@ -39,11 +44,15 @@ struct SyncStore: Sendable {
                 db,
                 sql: """
                     SELECT * FROM sentence
-                    WHERE bookId = ? AND chapter = ? AND conf > 0
+                    WHERE bookId = ? AND chapter = ? AND conf >= ?
+                      AND endS - startS <= ?
                       AND startS <= ? AND endS >= ?
                     ORDER BY i
                     """,
-                arguments: [bookId, chapter, upper, lower]
+                arguments: [
+                    bookId, chapter, Self.minimumClippingConfidence,
+                    Self.maximumSentenceDuration, upper, lower,
+                ]
             )
         }
     }
@@ -54,24 +63,30 @@ struct SyncStore: Sendable {
                 db,
                 sql: """
                     SELECT * FROM sentence
-                    WHERE bookId = ? AND conf > 0 AND startS <= ? AND endS >= ?
+                    WHERE bookId = ? AND conf >= ? AND startS <= ? AND endS >= ?
+                      AND endS - startS <= ?
                     ORDER BY startS DESC LIMIT 1
                     """,
-                arguments: [bookId, time, time]
+                arguments: [bookId, Self.minimumClippingConfidence, time, time, Self.maximumSentenceDuration]
             )
         }
     }
 
     func nearestPrecedingSentence(bookId: String, at time: Double) throws -> SentenceRecord? {
-        try database.writer.read { db in
+        let earliestEnd = max(0, time - Self.maximumApproximationGap)
+        return try database.writer.read { db in
             try SentenceRecord.fetchOne(
                 db,
                 sql: """
                     SELECT * FROM sentence
-                    WHERE bookId = ? AND conf > 0 AND endS <= ?
+                    WHERE bookId = ? AND conf >= ? AND endS <= ? AND endS >= ?
+                      AND endS - startS <= ?
                     ORDER BY endS DESC LIMIT 1
                     """,
-                arguments: [bookId, time]
+                arguments: [
+                    bookId, Self.minimumClippingConfidence, time, earliestEnd,
+                    Self.maximumSentenceDuration,
+                ]
             )
         }
     }

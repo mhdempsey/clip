@@ -18,10 +18,34 @@ There is no Clip server or analytics SDK. Local alignment keeps audio and text o
 ### 1. Prepare a book on your Mac
 
 1. Open Clip for Mac and choose a DRM-free EPUB plus its matching `.mp3`, `.m4a`, or `.m4b` audiobook.
-2. Choose **On this Mac** or **OpenRouter cloud**. Local alignment downloads its Whisper model once. For cloud alignment, open **Settings → OpenRouter cloud**, save your existing API key in Keychain, and set a spending limit. Review the estimate and upload disclosure before starting.
-3. Keep the resulting `.clipbook` package in Clip's iCloud Drive folder, or move it to the iPhone directly.
+2. Check the title, author, and audio-file order, then choose where to transcribe the audio:
 
-Cloud transcription uses Whisper Large V3 with word timestamps, in overlapping three-minute chunks with two uploads at a time. Completed chunks are saved locally; **Retry saved work** or adding the same audio again reuses them. Estimates use published provider rates and include chunk overlap; actual charges are reported by OpenRouter. The spending limit is checked between batches, so a final batch can put the total slightly over if rates change. Each confirmed retry starts a new spending allowance.
+   | Option | Transcription | Setup |
+   | --- | --- | --- |
+   | **On this Mac** | WhisperKit runs locally; audio and EPUB matching stay on your Mac. | Choose a quality level in Settings. Clip downloads the speech model on the first run and reuses it. |
+   | **OpenRouter cloud** | OpenRouter transcribes uploaded audio; EPUB matching stays on your Mac. | Use your own OpenRouter API key and credits. See the steps below. |
+
+3. Click **Align** for local transcription, or follow the OpenRouter steps below for cloud transcription.
+4. Keep the resulting `.clipbook` package in Clip's iCloud Drive folder, or move it to the iPhone directly.
+
+#### Align with OpenRouter
+
+1. Create an API key in your [OpenRouter account](https://openrouter.ai/settings/keys) and make sure the account has credits. You do not need a separate transcription-provider account.
+2. In Clip for Mac, open **Clip → Settings…** and select **OpenRouter cloud**.
+3. Paste your key and click **Save key**. Clip stores it in this Mac's Keychain; it is not included in exported books or synced to the iPhone.
+4. Set **Spending limit per run (USD)** to an amount greater than zero.
+5. Add your EPUB and matching audiobook, select **OpenRouter cloud** in the pairing card, and click **Review cloud alignment…**.
+6. Review the estimated charge and upload disclosure, then click **Upload audio and align**. Once alignment finishes, use the resulting `.clipbook` on your iPhone as usual.
+
+Clip uses Whisper Large V3 (`openai/whisper-large-v3`) with word timestamps. It sends overlapping three-minute audio chunks, with two uploads at a time, then matches the transcript to the EPUB on your Mac. Cloud alignment does not require downloading a local speech model.
+
+The estimate includes chunk overlap and is shown before cache savings. Actual charges come from OpenRouter. Clip checks the spending limit between upload batches; provider rate changes can put the final batch slightly over the limit. Each confirmed retry starts a new spending allowance.
+
+Completed transcript chunks are saved on your Mac. If alignment stops, click **Retry saved work**, or add the same unchanged audio again, to reuse completed chunks without uploading them again.
+
+- **Spending limit reached:** raise the limit in Settings before retrying.
+- **Key rejected or insufficient credits:** update the saved key or add OpenRouter credits, then retry.
+- **Word timestamps missing:** retry or switch to **On this Mac**. Clip needs word timestamps to sync the audio with the text.
 
 ### 2. Open it on your iPhone
 
@@ -40,7 +64,7 @@ Clip finds the aligned sentences spoken during that window and sends the passage
 
 Open **Read & listen** from the player. Swipe left or right to turn pages, or choose continuous scrolling in **Aa → Reading mode**. The same panel remembers your font, text size, spacing, margins, alignment, and white, sepia, or dark theme across books. Tap the center of the page to reveal or hide controls, and use **Contents** to move between chapters.
 
-Reading keeps its own place without moving the audiobook. Select text to **Highlight** the selected words or **Play from here** when audio timing is available. **Return to audio** restores following the spoken passage.
+Scrolling, page turns, chapter changes, and search results keep their own reading position without moving the audiobook. **Play from here** starts audio at the passage you are browsing when timing is available. **Return to audio** brings the reader back to the spoken passage and resumes following it. You can also select text to **Highlight** the selected words or **Play from here**.
 
 ## Readwise and Marginalia
 

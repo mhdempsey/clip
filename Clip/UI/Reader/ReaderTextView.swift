@@ -93,7 +93,6 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
     private var reflowing = false
     private var applyingText = false
     private var readerIsMoving = false
-    private var readerNavigationSentence: Int?
     private var paginationCancellation: ReaderPaginationCancellation?
 
     deinit { paginationCancellation?.cancel() }
@@ -104,6 +103,9 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
         textView.isSelectable = true
         textView.delegate = self
         textView.textContainer.lineFragmentPadding = 0
+        // Estimated offsets from noncontiguous layout drift as a long book is
+        // scrolled or highlighted. Navigation needs stable glyph coordinates.
+        textView.layoutManager.allowsNonContiguousLayout = false
         textView.contentInsetAdjustmentBehavior = .never
         textView.showsVerticalScrollIndicator = false
         textView.showsHorizontalScrollIndicator = false
@@ -136,8 +138,6 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
         loadViewIfNeeded()
         let needsLayout = documentID != value.document.id || appearance != value.appearance
         let activeChanged = lastActiveSentence != value.activeSentence
-        let readerSeek = value.activeSentence != nil && value.activeSentence == readerNavigationSentence
-        if readerSeek { readerNavigationSentence = nil }
         configuration = value
         documentID = value.document.id
         appearance = value.appearance
@@ -153,7 +153,7 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
         if needsLayout { reflow() }
         if activeChanged {
             lastActiveSentence = value.activeSentence
-            if value.following, !readerIsMoving, !readerSeek, let index = value.activeSentence, let range = value.document.sentenceRanges[index] {
+            if value.following, !readerIsMoving, let index = value.activeSentence, let range = value.document.sentenceRanges[index] {
                 if reflowing { anchor = range.location }
                 else { follow(range) }
             }
@@ -359,7 +359,7 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
         if UIAccessibility.isReduceMotionEnabled { render() }
         else { UIView.transition(with: textView, duration: 0.16, options: .transitionCrossDissolve, animations: render) }
         reportLocation()
-        reportReaderMove(displayedRange)
+        configuration?.onReaderMove(displayedRange)
         UIAccessibility.post(notification: .pageScrolled, argument: "Page \(page + 1) of \(pageRanges.count)")
     }
 
@@ -392,12 +392,7 @@ final class ReaderTextController: UIViewController, UITextViewDelegate, UIGestur
         )
         let glyphs = textView.layoutManager.glyphRange(forBoundingRect: rect, in: textView.textContainer)
         let characters = textView.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-        reportReaderMove(characters)
-    }
-
-    private func reportReaderMove(_ range: NSRange) {
-        readerNavigationSentence = configuration?.document.playbackSentence(in: range)?.i
-        configuration?.onReaderMove(range)
+        configuration?.onReaderMove(characters)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {

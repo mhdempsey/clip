@@ -17,14 +17,16 @@ final class PlayerLayoutUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("city")
-        let result = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reader.search.result.")).firstMatch
+        let result = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reader.search.result.")).element(boundBy: 3)
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         keepScreenshot(of: app, named: "Search results within a book")
         result.tap()
         XCTAssertTrue(app.buttons["reader.play-from-here"].waitForExistence(timeout: 5))
+        let text = app.descendants(matching: .any)["reader.text"].firstMatch
+        XCTAssertTrue((text.value as? String)?.contains("city") == true, "The selected match must be in the displayed page")
+        XCTAssertFalse(app.descendants(matching: .any)["reader.location"].firstMatch.label.contains("Page 1 of"))
         keepScreenshot(of: app, named: "Browsing a search match without moving audio")
-        app.descendants(matching: .any)["reader.text"].firstMatch.swipeLeft()
-        app.buttons["reader.show-controls"].tap()
+        text.swipeRight()
         app.buttons["reader.done"].tap()
         XCTAssertEqual(scrubber.value as? String, original, "Search and subsequent browsing must leave audio untouched")
         for _ in 0..<4 where !entry.isHittable { app.swipeUp(velocity: .fast) }
@@ -40,6 +42,43 @@ final class PlayerLayoutUITests: XCTestCase {
         app.buttons["reader.play-pause"].tap()
         app.buttons["reader.done"].tap()
         XCTAssertNotEqual(scrubber.value as? String, original)
+    }
+
+    func testContinuousScrollingStaysPutUntilReturnToAudioOrPlayFromHere() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-fixture", "--ui-test-reset-reader"]
+        app.launch()
+        let entry = app.buttons["player.reader"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !entry.isHittable { app.swipeUp(velocity: .fast) }
+        entry.tap()
+        app.buttons["reader.display"].tap()
+        app.segmentedControls["reader.appearance.mode"].buttons["Scroll"].tap()
+        app.buttons["reader.appearance.done"].tap()
+        let text = app.descendants(matching: .any)["reader.text"].firstMatch
+        let location = app.descendants(matching: .any)["reader.location"].firstMatch
+        text.swipeUp(velocity: .slow)
+        XCTAssertTrue(app.buttons["reader.play-from-here"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reader.play-from-here"].isEnabled)
+        let browsedLocation = location.label
+        let percent = Int(browsedLocation.components(separatedBy: "%").first ?? "") ?? 100
+        XCTAssertGreaterThan(percent, 0)
+        XCTAssertLessThan(percent, 50, "A small scroll must not jump near the end of the book")
+        app.buttons["reader.play-pause"].tap()
+        app.buttons["reader.forward"].tap()
+        app.buttons["reader.back"].tap()
+        XCTAssertEqual(location.label, browsedLocation, "Playback and skip updates must leave browsing in place")
+        app.buttons["reader.play-pause"].tap()
+        keepScreenshot(of: app, named: "Continuous browsing with separate audio controls")
+        app.buttons["reader.resume"].tap()
+        XCTAssertFalse(app.buttons["reader.play-from-here"].exists)
+        XCTAssertNotEqual(location.label, browsedLocation)
+        text.swipeUp(velocity: .slow)
+        app.buttons["reader.play-from-here"].tap()
+        expectation(for: NSPredicate(format: "label == %@", "Pause"), evaluatedWith: app.buttons["reader.play-pause"])
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["reader.play-from-here"].exists)
+        app.buttons["reader.play-pause"].tap()
     }
 
     func testSavedClipsAreVisibleInReaderAndLibraryIncludingSentClips() {
@@ -119,7 +158,9 @@ final class PlayerLayoutUITests: XCTestCase {
         text.swipeLeft()
         XCTAssertTrue(location.waitForExistence(timeout: 3))
         XCTAssertNotEqual(location.label, firstPage)
-        XCTAssertTrue(app.buttons["reader.show-controls"].exists)
+        XCTAssertTrue(app.buttons["reader.play-from-here"].exists)
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["reader.show-controls"].waitForExistence(timeout: 3))
         keepScreenshot(of: app, named: "Reader quiet page")
         XCUIDevice.shared.orientation = .landscapeLeft
         expectation(for: NSPredicate { _, _ in text.frame.width > text.frame.height }, evaluatedWith: text)
@@ -129,7 +170,7 @@ final class PlayerLayoutUITests: XCTestCase {
         XCTAssertNotEqual(location.label, landscapePage)
         keepScreenshot(of: app, named: "Reader landscape page")
         XCUIDevice.shared.orientation = .portrait
-        app.buttons["reader.show-controls"].tap()
+        if app.buttons["reader.show-controls"].exists { app.buttons["reader.show-controls"].tap() }
 
         app.buttons["reader.display"].tap()
         XCTAssertTrue(app.buttons["reader.theme.sepia"].waitForExistence(timeout: 3))
@@ -148,8 +189,7 @@ final class PlayerLayoutUITests: XCTestCase {
         app.buttons["reader.chapter.1"].tap()
         XCTAssertTrue((text.value as? String)?.contains("Second Chapter") == true)
         text.swipeUp()
-        XCTAssertTrue(app.buttons["reader.show-controls"].waitForExistence(timeout: 3))
-        app.buttons["reader.show-controls"].tap()
+        XCTAssertTrue(app.buttons["reader.play-from-here"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["reader.resume"].isHittable)
     }
 
@@ -175,7 +215,7 @@ final class PlayerLayoutUITests: XCTestCase {
         keepScreenshot(of: app, named: "Reader native selection actions")
     }
 
-    func testReaderPageAndChapterNavigationSeekAudioWhileKeepingItPaused() {
+    func testReaderPageAndChapterBrowsingOnlySeekWhenPlayFromHereIsPressed() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-player-fixture", "--ui-test-reset-reader"]
         app.launch()
@@ -187,21 +227,31 @@ final class PlayerLayoutUITests: XCTestCase {
         expectation(for: NSPredicate(format: "label CONTAINS %@", "Page 1 of"), evaluatedWith: location)
         waitForExpectations(timeout: 10)
         app.descendants(matching: .any)["reader.text"].firstMatch.swipeLeft()
-        app.buttons["reader.show-controls"].tap()
-        XCTAssertTrue(app.buttons["reader.resume"].label.contains("Following audio"))
+        XCTAssertTrue(app.buttons["reader.play-from-here"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reader.resume"].label.contains("Return to audio"))
         XCTAssertEqual(app.buttons["reader.play-pause"].label, "Play")
-        keepScreenshot(of: app, named: "Paused audio follows page turn with highlight")
+        keepScreenshot(of: app, named: "Page browsing leaves audio in place")
         app.buttons["reader.done"].tap()
         let scrubber = app.descendants(matching: .any)["player.scrubber"].firstMatch
         XCTAssertTrue(scrubber.waitForExistence(timeout: 5))
-        XCTAssertNotEqual(scrubber.value as? String, "0:00 of 4:00")
+        XCTAssertEqual(scrubber.value as? String, "0:00 of 4:00")
         for _ in 0..<4 where !entry.isHittable { app.swipeUp(velocity: .fast) }
         entry.tap()
         app.buttons["reader.contents"].tap()
         app.buttons["reader.chapter.1"].tap()
+        XCTAssertTrue(app.buttons["reader.play-from-here"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["reader.play-pause"].label, "Play")
+        app.buttons["reader.resume"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "Page 1 of"), evaluatedWith: location)
+        waitForExpectations(timeout: 5)
+        app.buttons["reader.contents"].tap()
+        app.buttons["reader.chapter.1"].tap()
+        app.buttons["reader.play-from-here"].tap()
+        expectation(for: NSPredicate(format: "label == %@", "Pause"), evaluatedWith: app.buttons["reader.play-pause"])
+        waitForExpectations(timeout: 5)
+        app.buttons["reader.play-pause"].tap()
         app.buttons["reader.done"].tap()
-        XCTAssertEqual(scrubber.value as? String, "2:00 of 4:00")
+        XCTAssertTrue((scrubber.value as? String)?.hasPrefix("2:0") == true)
     }
 
     func testCompactLibrarySortArchiveAndRestore() {

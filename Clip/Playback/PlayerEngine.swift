@@ -40,6 +40,8 @@ final class PlayerEngine: ObservableObject {
     private var clipWindowObserver: NSObjectProtocol?
     private var externalPlaybackObserver: DarwinNotificationObservation?
     private var lastPersistedAt = Date.distantPast
+    private var pendingSeekID: UUID?
+    private var playbackRequested = false
 
     init(
         database: ClipDatabase = .shared,
@@ -72,9 +74,9 @@ final class PlayerEngine: ObservableObject {
             playbackError = nil
             let isCurrentBook = currentBook?.id == book.id
             let resumeTime = isCurrentBook ? globalTime : book.positionS
+            let resumePlayback = isCurrentBook && playbackRequested
             if !isCurrentBook {
-                persistPosition()
-                player.pause()
+                pause()
             }
             let data = try await resourceLoader.data(
                 at: try ClipBookBundle.resourceURL("sync.json", in: book.bundleFileURL),
@@ -90,9 +92,9 @@ final class PlayerEngine: ObservableObject {
             globalTime = min(max(0, resumeTime), book.durationS)
             defaults.set(book.id, forKey: AppGroup.Key.currentBookID)
             defaults.set(globalTime, forKey: AppGroup.Key.currentPosition)
-            rebuildQueue(at: globalTime)
+            positionQueue(at: globalTime, rebuilding: true)
             publishState(forceActivityUpdate: true)
-            if autoplay { play() }
+            if autoplay || resumePlayback { play() }
         } catch {
             guard !Task.isCancelled else { return }
             playbackError = "This audiobook isn’t available yet. \(error.localizedDescription)"
@@ -106,7 +108,9 @@ final class PlayerEngine: ObservableObject {
         }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
+            playbackRequested = true
             player.play()
+            updatePlayingState(true)
             Task { await ClipService.shared.flushPending() }
         } catch {
             playbackError = error.localizedDescription
@@ -114,6 +118,7 @@ final class PlayerEngine: ObservableObject {
     }
 
     func pause() {
+        playbackRequested = false
         player.pause()
         updatePlayingState(false)
         persistPosition()
@@ -141,12 +146,11 @@ final class PlayerEngine: ObservableObject {
     }
 
     func seek(to time: Double) {
-        guard let book = currentBook else { return }
+        guard time.isFinite, let book = currentBook else { return }
         let target = min(max(0, time), book.durationS)
-        let resume = isPlaying
-        rebuildQueue(at: target)
         globalTime = target
-        if resume { player.play() }
+        positionQueue(at: target)
+        if playbackRequested { player.play() }
         persistPosition()
         publishState(forceActivityUpdate: true)
     }
@@ -185,7 +189,11 @@ final class PlayerEngine: ObservableObject {
             Task { @MainActor in self?.tick() }
         }
         playerObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
-            Task { @MainActor in self?.updatePlayingState(player.timeControlStatus == .playing) }
+            Task { @MainActor in
+                guard let self, self.pendingSeekID == nil else { return }
+                self.playbackRequested = player.timeControlStatus != .paused
+                self.updatePlayingState(self.playbackRequested)
+            }
         }
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
@@ -215,33 +223,47 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    private func rebuildQueue(at global: Double) {
+    private func positionQueue(at global: Double, rebuilding: Bool = false) {
         guard let book = currentBook, let manifest, !manifest.audio.isEmpty else {
+            pendingSeekID = nil
             player.removeAllItems()
+            itemOffsets.removeAll()
             itemObservations.removeAll()
             return
         }
+        let seekID = UUID()
+        pendingSeekID = seekID
         let segmentIndex = manifest.audio.lastIndex(where: { $0.offsetS <= global }) ?? 0
-        player.removeAllItems()
-        itemOffsets.removeAll()
-        itemObservations.removeAll()
-        for segment in manifest.audio[segmentIndex...] {
-            guard let url = try? ClipBookBundle.resourceURL(segment.file, in: book.bundleFileURL) else {
-                player.removeAllItems()
-                playbackError = ClipBookResourceError.unsafePath.localizedDescription
-                return
-            }
-            let item = AVPlayerItem(url: url)
-            itemOffsets[ObjectIdentifier(item)] = segment.offsetS
-            itemObservations.append(item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
-                guard let item else { return }
-                Task { @MainActor in self?.handleItemStatus(item) }
-            })
-            player.insert(item, after: nil)
-        }
         let segment = manifest.audio[segmentIndex]
+        let currentOffset = player.currentItem.flatMap { itemOffsets[ObjectIdentifier($0)] }
+        if rebuilding || currentOffset != segment.offsetS {
+            player.removeAllItems()
+            itemOffsets.removeAll()
+            itemObservations.removeAll()
+            for segment in manifest.audio[segmentIndex...] {
+                guard let url = try? ClipBookBundle.resourceURL(segment.file, in: book.bundleFileURL) else {
+                    pendingSeekID = nil
+                    player.removeAllItems()
+                    playbackError = ClipBookResourceError.unsafePath.localizedDescription
+                    return
+                }
+                let item = AVPlayerItem(url: url)
+                itemOffsets[ObjectIdentifier(item)] = segment.offsetS
+                itemObservations.append(item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
+                    guard let item else { return }
+                    Task { @MainActor in self?.handleItemStatus(item) }
+                })
+                player.insert(item, after: nil)
+            }
+        }
         let local = min(max(0, global - segment.offsetS), segment.durationS)
-        player.seek(to: CMTime(seconds: local, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: local, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            Task { @MainActor in
+                guard let self, self.pendingSeekID == seekID else { return }
+                self.pendingSeekID = nil
+                if !finished { self.playbackError = "The audiobook couldn’t move to that position. Try again." }
+            }
+        }
     }
 
     private func prepareAudioFiles(in manifest: PlaybackManifest, for book: BookRecord) async throws {
@@ -279,15 +301,17 @@ final class PlayerEngine: ObservableObject {
     }
 
     private func handleItemStatus(_ item: AVPlayerItem) {
-        guard item.status == .failed else { return }
-        player.pause()
-        updatePlayingState(false)
+        guard itemOffsets[ObjectIdentifier(item)] != nil, item.status == .failed else { return }
+        pendingSeekID = nil
+        pause()
         let detail = item.error?.localizedDescription ?? "The audio file couldn’t be opened."
         playbackError = "This audiobook couldn’t play. \(detail)"
     }
 
     private func tick() {
-        if let item = player.currentItem, let offset = itemOffsets[ObjectIdentifier(item)] {
+        // AVPlayer can report the previous time (or zero for a new item) until
+        // a seek completes. Keep accumulating skips from the requested target.
+        if pendingSeekID == nil, let item = player.currentItem, let offset = itemOffsets[ObjectIdentifier(item)] {
             let local = item.currentTime().seconds
             if local.isFinite { globalTime = max(0, offset + local) }
         }
@@ -311,7 +335,7 @@ final class PlayerEngine: ObservableObject {
         case .began:
             defaults.set(globalTime, forKey: AppGroup.Key.interruptionPosition)
             defaults.set(Date().timeIntervalSince1970, forKey: AppGroup.Key.interruptionDate)
-            persistPosition()
+            pause()
         case .ended:
             guard let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
                   AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume) else { return }
@@ -322,9 +346,11 @@ final class PlayerEngine: ObservableObject {
     }
 
     private func handleItemFinished(_ item: AVPlayerItem?) {
-        guard let item, player.items().isEmpty || itemOffsets[ObjectIdentifier(item)] == manifest?.audio.last?.offsetS,
+        guard pendingSeekID == nil, let item, let offset = itemOffsets[ObjectIdentifier(item)],
+              player.items().isEmpty || offset == manifest?.audio.last?.offsetS,
               let book = currentBook else { return }
         globalTime = book.durationS
+        playbackRequested = false
         updatePlayingState(false)
         liveActivity.end(elapsed: globalTime, duration: book.durationS)
     }

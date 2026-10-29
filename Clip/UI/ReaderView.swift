@@ -19,7 +19,6 @@ struct ReaderView: View {
     @State private var showingSearch = false
     @State private var searchQuery = ""
     @State private var bookToolsTab = 0
-    @State private var browsing = false
     @State private var browsingSentence: Int?
     @State private var focusedRange: NSRange?
     @State private var navigation: ReaderNavigation?
@@ -31,6 +30,7 @@ struct ReaderView: View {
     @State private var loadError = false
 
     private var palette: ReaderPalette { preferences.value.palette }
+    private var browsing: Bool { !following }
     private var currentChapter: ReaderDocument.Chapter? {
         document.chapters.last(where: { $0.range.location <= visibleCharacter })
     }
@@ -60,7 +60,12 @@ struct ReaderView: View {
                     activeSentence: activeIndex, following: following,
                     navigation: navigation,
                     onToggleControls: { setControlsVisible(!controlsVisible) },
-                    onManualMove: { following = false; setControlsVisible(false) },
+                    onManualMove: {
+                        following = false
+                        focusedRange = nil
+                        browsingSentence = nil
+                        setControlsVisible(true)
+                    },
                     onLocation: { character, page, count in
                         visibleCharacter = character
                         pageNumber = page
@@ -69,10 +74,7 @@ struct ReaderView: View {
                     onHighlight: { indices, text in saveHighlight(indices, text: text) },
                     onPlay: playFrom,
                     onReaderMove: { range in
-                        if browsing {
-                            focusedRange = nil
-                            browsingSentence = document.playbackSentence(in: range)?.i
-                        } else if let sentence = document.playbackSentence(in: range) { moveAudio(to: sentence) }
+                        browsingSentence = document.playbackSentence(in: range)?.i
                     },
                     focusedRange: focusedRange
                 )
@@ -162,17 +164,18 @@ struct ReaderView: View {
                     }
                     .accessibilityIdentifier("reader.resume")
                     Spacer()
+                    Text(locationLabel).font(.system(size: 11)).monospacedDigit()
+                        .foregroundStyle(Color(palette.secondary))
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .accessibilityIdentifier("reader.location")
                     if browsing {
+                        Spacer()
                         Button("Play from here") {
                             if let sentence = document.passages.first(where: { $0.sentence.i == browsingSentence })?.sentence { playFrom(sentence) }
                         }
                         .font(.system(size: 11, weight: .medium)).frame(minHeight: 44)
                         .disabled(browsingSentence == nil)
                         .accessibilityIdentifier("reader.play-from-here")
-                    } else {
-                        Text(locationLabel).font(.system(size: 11)).monospacedDigit()
-                            .foregroundStyle(Color(palette.secondary))
-                            .accessibilityIdentifier("reader.location")
                     }
                 }
                 HStack(spacing: 12) {
@@ -250,11 +253,8 @@ struct ReaderView: View {
                 } else {
                     List(document.chapters) { chapter in
                         Button {
-                            browsing = false
-                            focusedRange = nil
-                            following = false
-                            navigation = ReaderNavigation(character: chapter.range.location)
-                            if let sentence = document.passages.first(where: { $0.sentence.chapter == chapter.id && $0.sentence.isTimed })?.sentence { moveAudio(to: sentence) }
+                            let end = document.chapters.first(where: { $0.range.location > chapter.range.location })?.range.location ?? document.utf16Length
+                            browse(to: NSRange(location: chapter.range.location, length: end - chapter.range.location), highlight: false)
                             showingContents = false
                         } label: {
                             HStack {
@@ -293,19 +293,18 @@ struct ReaderView: View {
     }
 
     private func returnToAudio() {
-        browsing = false
         focusedRange = nil
+        browsingSentence = nil
         following = true
         if let passage = document.passages.first(where: { $0.sentence.i == activeIndex }) {
             navigation = ReaderNavigation(character: passage.range.location)
         }
     }
 
-    private func browse(to range: NSRange) {
-        browsing = true
+    private func browse(to range: NSRange, highlight: Bool = true) {
         following = false
         controlsVisible = true
-        focusedRange = range
+        focusedRange = highlight ? range : nil
         browsingSentence = document.playbackSentence(in: range)?.i
         navigation = ReaderNavigation(character: range.location)
     }
@@ -316,13 +315,6 @@ struct ReaderView: View {
         activeIndex = document.activeSentence(at: time)
         player.play()
         returnToAudio()
-    }
-
-    private func moveAudio(to sentence: SentenceRecord) {
-        guard let time = sentence.startS else { return }
-        player.seek(to: time)
-        activeIndex = sentence.i
-        following = true
     }
 
     private func saveHighlight(_ indices: ClosedRange<Int>?, text: String? = nil) {

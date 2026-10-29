@@ -66,6 +66,10 @@ Open **Read & listen** from the player. Swipe left or right to turn pages, or ch
 
 Scrolling, page turns, chapter changes, and search results keep their own reading position without moving the audiobook. **Play from here** starts audio at the passage you are browsing when timing is available. **Return to audio** brings the reader back to the spoken passage and resumes following it. You can also select text to **Highlight** the selected words or **Play from here**.
 
+## Getting Books
+
+Assuming you want to do this legally as you should, many like to use [Libro](https://libro.fm/) to buy DRM-free audiobooks and [eBooks](https://www.ebooks.com/) for DRM-free ebooks.
+
 ## Readwise and Marginalia
 
 Readwise is the bridge between Clip and [Marginalia](https://ourmarginalia.com/):
